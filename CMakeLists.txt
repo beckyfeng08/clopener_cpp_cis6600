@@ -25,9 +25,14 @@ igl_include(glfw)
 #igl_include(restricted triangle)
 
 
-# Add your project files
-file(GLOB SRC_FILES *.cpp include/*.cpp)
-add_executable(${PROJECT_NAME} ${SRC_FILES}     include/remesh_botsch.cpp )
+# Project sources (explicit roots so closing_flow always links; GLOB is configure-time only)
+set(PROJECT_ROOT_CPP
+  "${CMAKE_CURRENT_SOURCE_DIR}/main.cpp"
+  "${CMAKE_CURRENT_SOURCE_DIR}/closing_flow.cpp"
+  "${CMAKE_CURRENT_SOURCE_DIR}/closing_flow_helpers.cpp"
+)
+file(GLOB INCLUDE_CPP CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/include/*.cpp")
+add_executable(${PROJECT_NAME} ${PROJECT_ROOT_CPP} ${INCLUDE_CPP})
 
 # Add include directory
 target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include

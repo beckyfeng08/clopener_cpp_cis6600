@@ -1,66 +1,70 @@
 #include <igl/opengl/glfw/Viewer.h>
-#include "remesh_botsch.h"
-#include <igl/boundary_loop.h>
-#include "all_boundary_loop.h"
 #include <Eigen/Core>
-// #include <igl/read_triangle_mesh.h>
-// #include <igl/write_triangle_mesh.h>
+#include <igl/read_triangle_mesh.h>
+#include <igl/write_triangle_mesh.h>
+#include <iostream>
+#include <string>
+#include "closing_flow.h"
 
-
-void create_cube(Eigen::MatrixXd &V, Eigen::MatrixXi &F) {
-V= (Eigen::MatrixXd(8,3)<<
-    0.0,0.0,0.0,
-    0.0,0.0,1.0,
-    0.0,1.0,0.0,
-    0.0,1.0,1.0,
-    1.0,0.0,0.0,
-    1.0,0.0,1.0,
-    1.0,1.0,0.0,
-    1.0,1.0,1.0).finished();
-  F = (Eigen::MatrixXi(12,3)<<
-    0,6,4,
-    0,2,6,
-    0,3,2,
-    0,1,3,
-    2,7,6,
-    2,3,7,
-    4,6,7,
-    4,7,5,
-    0,4,5,
-    0,5,1,
-    1,5,7,
-    1,7,3).finished();
-}
 int main(int argc, char *argv[])
 {
-  //  ~~~~~ STEP 0: LOAD MESH ~~~~~
-  // Inline mesh of a cube
-
   Eigen::MatrixXd V;
   Eigen::MatrixXi F;
 
-  // generates a cube mesh and populates V and F
-  // create_cube(V, F);
+  const std::string mesh_path =
+      (argc > 1 && argv[1] != nullptr && argv[1][0] != '\0')
+          ? std::string(argv[1])
+          : std::string("../data/bunny.obj");
 
-  // uncomment to generate bunny mesh or any arbitrary mesh (be sure to comment out create_cube)
-  // igl::read_triangle_mesh(argc>1 ? argv[1] : "../data/bunny.off", V, F);
+  if (!igl::read_triangle_mesh(mesh_path, V, F)) {
+    std::cerr << "Failed to load mesh: " << mesh_path << "\n";
+    std::cerr << "Usage: " << (argc > 0 ? argv[0] : "example")
+              << " [mesh_path]\n";
+    return 1;
+  }
 
-  // uncomment for read .obj files, be sure to uncomment headers too
-  igl::read_triangle_mesh("../data/bunny.obj",V,F);
+  if (!igl::write_triangle_mesh("../data/mesh_initial.obj", V, F)) {
+    std::cerr << "Failed to write ../data/mesh_initial.obj\n";
+  } else{
+    std::cerr << "Successfully wrote ../data/mesh_initial.obj\n";
+  }
 
-  //   ~~~~~ STEP 1: remesh (copied and pasted from botsch-kobbelt-remesher-libigl/remeshmesh.cpp) ~~~~~
+  ClosingFlowParams params;
 
-    bool project = false;
-    int iterations = 10;
-    double h = 0.05;
-    
-    Eigen::VectorXd target = Eigen::VectorXd::Constant(V.rows(),h);
-    remesh_botsch(V,F,target,iterations, project); // V, F, and target are taken 
-
-  //  ~~~~~ STEP 2: VIEW MESH ~~~~~
-  // Plot the mesh
   igl::opengl::glfw::Viewer viewer;
   viewer.data().set_mesh(V, F);
   viewer.data().set_face_based(true);
+
+  std::cerr << "Press c to run closing_flow on the current mesh.\n";
+
+  viewer.callback_key_pressed =
+      [&](igl::opengl::glfw::Viewer &v, unsigned int key, int) -> bool {
+        if (key != 'c' && key != 'C') {
+          return false;
+        }
+        Eigen::MatrixXd Vout;
+        Eigen::MatrixXi Fout;
+        if (!closing_flow(V, F, params, Vout, Fout)) {
+          std::cerr << "closing_flow failed\n";
+          return true;
+        }
+        V = std::move(Vout);
+        F = std::move(Fout);
+        // Remeshing changes |V|/|F|; ViewerData::set_mesh requires clear first
+        v.data().clear();
+        v.data().set_mesh(V, F);
+        v.data().set_face_based(true);
+        if (!igl::write_triangle_mesh("../data/mesh_remeshed.obj", V, F)) {
+          std::cerr << "Failed to write ../data/mesh_remeshed.obj\n";
+        } else{
+          std::cerr << "Successfully wrote ../data/mesh_remeshed.obj\n";
+        }
+
+        std::cerr << "closing_flow finished; mesh updated (press c to run again on "
+                     "current mesh)\n";
+        return true;
+      };
+
   viewer.launch();
+  return 0;
 }
