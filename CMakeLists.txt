@@ -27,10 +27,11 @@ igl_include(glfw)
 
 # Add your project files
 file(GLOB SRC_FILES *.cpp include/*.cpp)
-add_executable(${PROJECT_NAME} ${SRC_FILES})
+add_executable(${PROJECT_NAME} ${SRC_FILES}     include/remesh_botsch.cpp )
 
 # Add include directory
-target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
 # Link igl (and the glfw module) to your project
 target_link_libraries(${PROJECT_NAME} PUBLIC 
   igl::glfw
