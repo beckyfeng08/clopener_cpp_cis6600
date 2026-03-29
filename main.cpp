@@ -38,14 +38,15 @@ int main(int argc, char *argv[])
 
   Eigen::MatrixXd V;
   Eigen::MatrixXi F;
-  // generates a cube mesh and populates V and F
-  create_cube(V, F);
 
-  // uncomment to generate bunny mesh or any arbitrary mesh
+  // generates a cube mesh and populates V and F
+  // create_cube(V, F);
+
+  // uncomment to generate bunny mesh or any arbitrary mesh (be sure to comment out create_cube)
   // igl::read_triangle_mesh(argc>1 ? argv[1] : "../data/bunny.off", V, F);
 
   // uncomment for read .obj files, be sure to uncomment headers too
-      // igl::read_triangle_mesh(in,V,F);
+  igl::read_triangle_mesh("../data/bunny.obj",V,F);
 
   //   ~~~~~ STEP 1: remesh (copied and pasted from botsch-kobbelt-remesher-libigl/remeshmesh.cpp) ~~~~~
 
@@ -54,10 +55,7 @@ int main(int argc, char *argv[])
     double h = 0.05;
     
     Eigen::VectorXd target = Eigen::VectorXd::Constant(V.rows(),h);
-    Eigen::VectorXi feature;
-	feature.resize(0);
-    remesh_botsch(V,F,target,iterations, feature, project); // V, F, and target are taken 
-  // all_boundary_loop(F);
+    remesh_botsch(V,F,target,iterations, project); // V, F, and target are taken 
 
   //  ~~~~~ STEP 2: VIEW MESH ~~~~~
   // Plot the mesh
