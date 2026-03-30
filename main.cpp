@@ -8,6 +8,7 @@
 
 int main(int argc, char *argv[])
 {
+  // ~~~~~~~~~~~ STEP 0: LOAD MESH ~~~~~~~~~~~~
   Eigen::MatrixXd V;
   Eigen::MatrixXi F;
 
@@ -35,6 +36,8 @@ int main(int argc, char *argv[])
   viewer.data().set_mesh(V, F);
   viewer.data().set_face_based(true);
 
+  // ~~~~~~~~~~~ STEP 1: HANDLE INPUTS ~~~~~~~~~~~~
+
   std::cerr << "Press c to run closing_flow on the current mesh.\n";
 
   viewer.callback_key_pressed =
@@ -42,9 +45,15 @@ int main(int argc, char *argv[])
         if (key != 'c' && key != 'C') {
           return false;
         }
+
+        // ~~~~~~~~~~~ STEP 2: CLOSE THE MESH ~~~~~~~~~~~~
+
         Eigen::MatrixXd Vout;
         Eigen::MatrixXi Fout;
-        if (!closing_flow(V, F, params, Vout, Fout)) {
+
+        bool closed = closing_flow(V, F, params, Vout, Fout); // running closing operations on original vertices and faces
+
+        if (!closed) {
           std::cerr << "closing_flow failed\n";
           return true;
         }
@@ -54,6 +63,9 @@ int main(int argc, char *argv[])
         v.data().clear();
         v.data().set_mesh(V, F);
         v.data().set_face_based(true);
+
+          // ~~~~~~~~~~~ STEP 3: WRITE NEW MESH TO OUTPUT OBJ ~~~~~~~~~~~~
+
         if (!igl::write_triangle_mesh("../data/mesh_remeshed.obj", V, F)) {
           std::cerr << "Failed to write ../data/mesh_remeshed.obj\n";
         } else{

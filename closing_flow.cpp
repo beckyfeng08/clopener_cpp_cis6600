@@ -10,6 +10,8 @@
 #include <igl/avg_edge_length.h>
 #include <igl/gaussian_curvature.h>
 #include <igl/massmatrix.h>
+#include <igl/principal_curvature.h>
+
 
 namespace cf = closing_flow_detail;
 
@@ -20,12 +22,15 @@ bool closing_flow(
     Eigen::MatrixXd &V_out,
     Eigen::MatrixXi &F_out)
 {
+    // Make sure that face and vertex have the correct dimensions (passing in a triangle mesh)
     if (F_in.cols() != 3 || V_in.cols() != 3)
         return false;
 
+    // start timer
     const auto t_flow_start = std::chrono::steady_clock::now();
     double remesh_seconds_total = 0;
 
+    // create a copy of input vertices and faces
     Eigen::MatrixXd Vfull = V_in;
     Eigen::MatrixXi Ffull = F_in;
 
@@ -36,18 +41,19 @@ bool closing_flow(
 
     bool recompute = true;
 
+    // Start the integration thing over params.maxiter timesteps
     // !!!!!!!!!!!!! NOTE: MAXITER IS HARDCODED TO 1 !!!!!!!!!!!!!
     // When we actually run the algorithm it will be like idk 300 or something big
-    for (int iter=0; iter<params.maxiter; iter++) {
+    for (int iter=0; iter < params.maxiter; iter++) {
         
         Eigen::MatrixXd Vprev = Vfull; // (n, 3)
         Eigen::MatrixXi Fprev = Ffull; // (m, 3)
 
-        const int nVerts = Vfull.rows();
-        Eigen::VectorXi moving(nVerts);
-        Eigen::VectorXi frozen(nVerts);
+        const int nVerts = Vfull.rows(); // number of total vertices in the mesh
+        Eigen::VectorXi moving(nVerts); // "active vertices" - those whose min. curvature k < 1/(-r) for closing
+        Eigen::VectorXi frozen(nVerts); // vertices with 0 flow (dS/dt)
         
-        if (iter == 0 || recompute) {
+        if (iter == 0 || recompute) { // at the very first iteration, or if we are recomputing
             // Compute A, sparse matrix with adjacency matrix plus identity for self-loops
             Eigen::SparseMatrix<int> A;
             igl::adjacency_matrix(Ffull, A); // (n, n)
@@ -74,9 +80,12 @@ bool closing_flow(
 
             // Principal curvatures
             Eigen::VectorXd squaredTerm = (H.array().square() - M.array() * K.array()).max(0.0);
+
+            
             Eigen::VectorXd sqrtDisc = squaredTerm.array().sqrt();
             Eigen::VectorXd k_max = H + sqrtDisc;
             Eigen::VectorXd k_min = H - sqrtDisc;
+
 
             // Select curvature based on opening vs closing
             Eigen::VectorXd curv; // (n, 1) the curvature of each vertex
@@ -84,6 +93,14 @@ bool closing_flow(
                 curv = (-k_max.array() / M.array()).matrix(); 
             } else { // closing: minimum curvature
                 curv = (k_min.array() / M.array()).matrix();
+            }
+
+            if (params.quadric_curvature) {
+                // Compute principal curvatures using quadric fitting (taken from https://github.com/libigl/libigl/blob/main/tutorial/203_CurvatureDirections/main.cpp)
+                // Compute curvature directions via quadric fitting. I think this yields better looking results but you end up remeshing more parts so it takes a performance
+                Eigen::MatrixXd PD1, PD2; // PD1 - V by 3 maximal curvature direction for each vertex, PD2 - " minimal "
+                igl::principal_curvature(Vfull, Ffull, PD1, PD2, k_max, k_min);
+                H = 0.5*(k_max+k_min);
             }
 
             // Active vertices where curv < -bd
@@ -95,9 +112,11 @@ bool closing_flow(
             Eigen::Index nmov = 0, nfroz = 0;
             for (Eigen::Index i = 0; i < nVerts; ++i) {
                 if (curv(i) < -params.bd) {
-                    moving(nmov++) = static_cast<int>(i);
+                    moving(nmov) = static_cast<int>(i);
+                    nmov++;
                 } else {
-                    frozen(nfroz++) = static_cast<int>(i);
+                    frozen(nfroz) = static_cast<int>(i);
+                    nfroz++;
                 }
             }
             moving.conservativeResize(nmov);
@@ -107,8 +126,11 @@ bool closing_flow(
             std::cerr << "active vertices + frozen vertices: " << moving.size() + frozen.size()
                       << "\n";
         }
-
-
+        
+        if (moving.size() == 0) { // we converged, break out of loop
+            std::cout << "Active set is empty" << std::endl;
+            break;
+        }
 
         
         // Step 4: Local remeshing (1 iteration)
