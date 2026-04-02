@@ -28,13 +28,16 @@ bool closing_flow(
     Eigen::MatrixXi &F_out)
 {
     // Make sure that face and vertex have the correct dimensions (passing in a triangle mesh)
+    // Make sure that face and vertex have the correct dimensions (passing in a triangle mesh)
     if (F_in.cols() != 3 || V_in.cols() != 3)
         return false;
 
     // start timer
+    // start timer
     const auto t_flow_start = std::chrono::steady_clock::now();
     double remesh_seconds_total = 0;
 
+    // create a copy of input vertices and faces
     // create a copy of input vertices and faces
     Eigen::MatrixXd Vfull = V_in;
     Eigen::MatrixXi Ffull = F_in;
@@ -47,8 +50,10 @@ bool closing_flow(
     bool recompute = true;
 
     // Start the integration thing over params.maxiter timesteps
+    // Start the integration thing over params.maxiter timesteps
     // !!!!!!!!!!!!! NOTE: MAXITER IS HARDCODED TO 1 !!!!!!!!!!!!!
     // When we actually run the algorithm it will be like idk 300 or something big
+    for (int iter=0; iter < params.maxiter; iter++) {
     for (int iter=0; iter < params.maxiter; iter++) {
         
         Eigen::MatrixXd Vprev = Vfull; // (n, 3)
@@ -159,7 +164,11 @@ bool closing_flow(
                 if (curv(i) < -params.bd) {
                     moving(nmov) = static_cast<int>(i);
                     nmov++;
+                    moving(nmov) = static_cast<int>(i);
+                    nmov++;
                 } else {
+                    frozen(nfroz) = static_cast<int>(i);
+                    nfroz++;
                     frozen(nfroz) = static_cast<int>(i);
                     nfroz++;
                 }

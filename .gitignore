@@ -32,3 +32,9 @@
 *.swp
 
 build/*
+
+# more stuff
+.vs/
+out/
+.DS_Store
+**/.DS_Store

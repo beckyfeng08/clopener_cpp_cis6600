@@ -16,4 +16,5 @@ struct ClosingFlowParams {
     bool opening = false;
     bool always_recompute = false;
     double tol = 1e-5;
+    bool quadric_curvature = false;
 };
