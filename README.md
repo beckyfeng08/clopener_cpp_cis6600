@@ -12,6 +12,13 @@ Once the project is running, press the `c` key to perform closing.
 - Enable non triangle meshes (currently assume trimesh)
 - Curvature flow update over time step
 
+## Nomenclature
+### `moving` vs. `active`
+`moving` refers to vertices that should undergo curvature flow (the curvature computed from the adjacent faces)
+`active` refers to those moving vertices, plus a 2-triangle deep buffer of vertices surrounding the moving vertices. 
+
+The `active` vertices get remeshed, but only the `moving` vertices undergo curvature flow. This is so that when we stitch back together the moving and frozen vertices at the end, there is smoothness and cleanness at the seams. 
+
 
 =============================================================================
 # libigl example project

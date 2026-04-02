@@ -7,6 +7,8 @@
 #include <igl/edge_lengths.h>
 #include <igl/per_face_normals.h>
 #include <igl/triangle_triangle_adjacency.h>
+#include <igl/boundary_loop.h>
+#include <igl/internal_angles.h>
 
 namespace closing_flow_detail {
 
@@ -142,6 +144,86 @@ Eigen::VectorXd discrete_mean_curvature(
     return H;
 }
 
+Eigen::VectorXi get_all_boundary_vids(const Eigen::MatrixXi& F)
+{
+    std::vector<std::vector<int>> loops;
+    igl::boundary_loop(F, loops);
+ 
+    int total = 0;
+    for (const auto& lp : loops) total += static_cast<int>(lp.size());
+ 
+    Eigen::VectorXi bnd(total);
+    int idx = 0;
+    for (const auto& lp : loops)
+        for (int v : lp)
+            bnd(idx++) = v;
+    return bnd;
+}
+
+Eigen::VectorXd discrete_gaussian_curvature(
+    const Eigen::MatrixXd& V,
+    const Eigen::MatrixXi& F)
+{
+    // Accumulate internal angles per vertex
+    Eigen::MatrixXd angles;
+    igl::internal_angles(V, F, angles); // (nF, 3)
+
+    Eigen::VectorXd K = Eigen::VectorXd::Constant(V.rows(), 2.0 * kPi);
+    for (int f = 0; f < F.rows(); f++)
+        for (int e = 0; e < 3; e++)
+            K(F(f, e)) -= angles(f, e);
+
+    // Boundary correction
+    Eigen::VectorXi bnd = get_all_boundary_vids(F);
+    for (int i = 0; i < bnd.size(); i++)
+        K(bnd(i)) -= kPi;
+
+    return K;
+}
+
+Eigen::VectorXi incident_faces(
+    const Eigen::MatrixXi& F,
+    const Eigen::VectorXi& vids,    // vertex IDs, not face IDs!
+    int v_incidence)
+{
+    const int nV = F.maxCoeff() + 1;
+    const int nF = F.rows();
+
+    // selected[v] = true if v is in vids
+    std::vector<bool> selected(nV, false);
+    for (int i = 0; i < vids.size(); i++)
+        selected[vids(i)] = true;
+
+    // Count how many vertices of each face are selected
+    std::vector<int> result;
+    for (int f = 0; f < nF; f++)
+    {
+        int count = 0;
+        for (int e = 0; e < F.cols(); e++)
+            if (selected[F(f, e)])
+                count++;
+        if (count >= v_incidence)
+            result.push_back(f);
+    }
+
+    // Convert to Eigen vector
+    Eigen::VectorXi out(result.size());
+    for (int i = 0; i < (int)result.size(); i++)
+        out(i) = result[i];
+    return out;
+}
+
+std::vector<bool> expandRing(const Eigen::SparseMatrix<int>& A, const std::vector<bool>& inSet)
+{
+    int nVerts = (int)inSet.size();
+    std::vector<bool> result(nVerts, false);
+    for (int j = 0; j < nVerts; ++j) {
+        if (!inSet[j]) continue;
+        for (Eigen::SparseMatrix<int>::InnerIterator it(A, j); it; ++it)
+            result[it.row()] = true;
+    }
+    return result;
+}
 
 
 } // namespace closing_flow_detail
