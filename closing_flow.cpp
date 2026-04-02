@@ -54,7 +54,6 @@ bool closing_flow(
     // !!!!!!!!!!!!! NOTE: MAXITER IS HARDCODED TO 1 !!!!!!!!!!!!!
     // When we actually run the algorithm it will be like idk 300 or something big
     for (int iter=0; iter < params.maxiter; iter++) {
-    for (int iter=0; iter < params.maxiter; iter++) {
         
         Eigen::MatrixXd Vprev = Vfull; // (n, 3)
         Eigen::MatrixXi Fprev = Ffull; // (m, 3)
@@ -164,11 +163,7 @@ bool closing_flow(
                 if (curv(i) < -params.bd) {
                     moving(nmov) = static_cast<int>(i);
                     nmov++;
-                    moving(nmov) = static_cast<int>(i);
-                    nmov++;
                 } else {
-                    frozen(nfroz) = static_cast<int>(i);
-                    nfroz++;
                     frozen(nfroz) = static_cast<int>(i);
                     nfroz++;
                 }
@@ -224,7 +219,7 @@ bool closing_flow(
             
         // ~~~~~~~~~~~~~~ Active and inactive faces ~~~~~~~~~~~~~
         // Convert isActive bool vector to index vector for incident_faces
-        // Speed this up later (construct active_vec when we are constructing isActive)
+        // Speed this up later? (construct active_vec when we are constructing isActive)
         std::vector<int> active_vec;
         active_vec.reserve(nVerts);
         for (int i = 0; i < nVerts; ++i) {
@@ -347,14 +342,11 @@ bool closing_flow(
         Eigen::VectorXd M_active(v_active.rows());
         for (int i = 0; i < (int)v_active.rows(); ++i)
             M_active(i) = M(J(i));  // M is the global clipped mass vector from earlier
-
-        // ~~~~~~~~~~~~~~~~~~~~ Sanity checks for M_active construction ~~~~~~~~~~~~~~~
-        // After M_active construction
+        // sanity check
         std::cerr << "M_active size: " << M_active.size() << " (should == v_active.rows() == " << v_active.rows() << ")\n";
         std::cerr << "M_active min: " << M_active.minCoeff() << " (should be >= 1e-8)\n";
         std::cerr << "M_active max: " << M_active.maxCoeff() << "\n";
         std::cerr << "sanity: M_active size == v_active rows? " << (M_active.size() == v_active.rows() ? "YES" : "NO") << "\n";
-        // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
         // dblA: per-face area weights (double area / 2 = area)
         Eigen::VectorXd dblA_vec;
@@ -832,7 +824,7 @@ bool closing_flow(
 
         //     // expects the indices of the frozen vertices, used as a row index into Vfull
         //     // Eigen::VectorXi fixed_vertices(4); 
-        //     // fixed_vertices << 0, 1, 2, 3;
+        //     // fixed_verticesa << 0, 1, 2, 3;
 
         //     // Construct target edge length vector
         //     const int numV = static_cast<int>(Vfull.rows());

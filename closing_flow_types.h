@@ -8,7 +8,7 @@ struct ClosingFlowParams {
 
     /// Target edge length for Botsch-Kobbelt remeshing. If <= 0, uses
     /// 0.5 * avg_edge_length (adaptive to mesh scale)
-    double h = 0.05;
+    double h = 0.001;
 
     /// Remesh iterations per flow step
     int remesh_iterations = 3;
