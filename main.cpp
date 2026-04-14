@@ -15,7 +15,7 @@ int main(int argc, char *argv[])
   const std::string mesh_path =
       (argc > 1 && argv[1] != nullptr && argv[1][0] != '\0')
           ? std::string(argv[1])
-          : std::string("../data/bunny.obj");
+          : std::string("../data/cutout_cube.obj");
 
   if (!igl::read_triangle_mesh(mesh_path, V, F)) {
     std::cerr << "Failed to load mesh: " << mesh_path << "\n";
