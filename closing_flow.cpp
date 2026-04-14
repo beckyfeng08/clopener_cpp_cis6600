@@ -967,15 +967,51 @@ bool closing_flow(
         //}
         //A.setFromTriplets(a_trips.begin(), a_trips.end());
 
+        // // ── Rebuild adjacency matrix A for next iteration ───────────────────────
+        // // Build from post-remesh Ffull so size always matches new Vfull
+        // int nVfull_post = (int)Vfull.rows();
+        // igl::adjacency_matrix(Ffull, A);
+        // for (int i = 0; i < nVfull_post; i++)
+        //     A.coeffRef(i, i) = 1;
+        // std::cerr << "A rebuilt post-remesh size: " << A.rows() << " x " << A.cols() << "\n";
+        // std::cerr << "sanity: A.rows() == Vfull.rows()? "
+        //     << (A.rows() == Vfull.rows() ? "YES" : "NO - WARNING") << "\n";
+
         // ── Rebuild adjacency matrix A for next iteration ───────────────────────
-        // Build from post-remesh Ffull so size always matches new Vfull
+        // Python: A = edges from active region only + identity
+        // This limits 2-ring expansion to stay within the previously active region
         int nVfull_post = (int)Vfull.rows();
-        igl::adjacency_matrix(Ffull, A);
+        A.resize(nVfull_post, nVfull_post);
+        A.setZero();
+
+        // Get edges of the full mesh
+        Eigen::MatrixXi all_edges_post;
+        igl::edges(Ffull, all_edges_post);
+
+        // Only include edges where at least one endpoint was in interior_active_full
+        // (i.e. the active region from this iteration)
+        std::vector<bool> wasActive(nVfull_post, false);
+        for (int i = 0; i < interior_active_full.size(); i++)
+            if (interior_active_full(i) >= 0 && interior_active_full(i) < nVfull_post)
+                wasActive[interior_active_full(i)] = true;
+
+        std::vector<Eigen::Triplet<int>> a_trips_post;
+        a_trips_post.reserve(all_edges_post.rows() * 2 + nVfull_post);
+        for (int i = 0; i < all_edges_post.rows(); i++) {
+            int u = all_edges_post(i, 0);
+            int v = all_edges_post(i, 1);
+            if (wasActive[u] || wasActive[v]) {
+                a_trips_post.emplace_back(u, v, 1);
+                a_trips_post.emplace_back(v, u, 1);
+            }
+        }
         for (int i = 0; i < nVfull_post; i++)
-            A.coeffRef(i, i) = 1;
-        std::cerr << "A rebuilt post-remesh size: " << A.rows() << " x " << A.cols() << "\n";
+            a_trips_post.emplace_back(i, i, 1);
+        A.setFromTriplets(a_trips_post.begin(), a_trips_post.end());
+
+        std::cerr << "A rebuilt (active-only edges), size: " << A.rows() << " x " << A.cols() << "\n";
         std::cerr << "sanity: A.rows() == Vfull.rows()? "
-            << (A.rows() == Vfull.rows() ? "YES" : "NO - WARNING") << "\n";
+                  << (A.rows() == Vfull.rows() ? "YES" : "NO - WARNING") << "\n";
 
         // ── Convergence check every 10 iterations ───────────────────────────────
         if ((iter + 1) % 10 == 0) {
