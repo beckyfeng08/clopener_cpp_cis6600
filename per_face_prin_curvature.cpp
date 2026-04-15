@@ -9,12 +9,31 @@
 #include <igl/edge_flaps.h>
 #include <igl/barycenter.h>
 #include <igl/parallel_for.h>
-#include <igl/pinv.h>
 #include <Eigen/SparseCore>
+#include <Eigen/SVD>
 #include <iostream>
 using namespace std;
 
 namespace pfpc {
+
+namespace {
+
+// Moore–Penrose pseudoinverse (Jacobi SVD; matches igl::pinv’s two-argument overload).
+template <typename DerivedA, typename DerivedX>
+void pinv(const Eigen::MatrixBase<DerivedA> &A, Eigen::PlainObjectBase<DerivedX> &X)
+{
+    Eigen::JacobiSVD<DerivedA> svd(A, Eigen::ComputeFullU | Eigen::ComputeFullV);
+    typedef typename DerivedA::Scalar Scalar;
+    const Eigen::Matrix<Scalar, Eigen::Dynamic, Eigen::Dynamic> &U = svd.matrixU();
+    const Eigen::Matrix<Scalar, Eigen::Dynamic, Eigen::Dynamic> &V = svd.matrixV();
+    const Eigen::Matrix<Scalar, Eigen::Dynamic, 1> &S = svd.singularValues();
+    // igl::pinv default path uses strictly positive singular values (see igl/pinv.cpp).
+    const int rank = (int)(S.array() > 0).count();
+    X = (V.leftCols(rank).array().rowwise() * (1.0 / S.head(rank).array()).transpose()).matrix() *
+        U.leftCols(rank).transpose();
+}
+
+} // namespace
 
 void per_face_prin_curvature(const Eigen::MatrixXd & V, const Eigen::MatrixXi & F, Eigen::MatrixXd & PD1, Eigen::MatrixXd & PD2, Eigen::VectorXd & PC1, Eigen::VectorXd & PC2){
     
@@ -139,7 +158,7 @@ void per_face_prin_curvature(const Eigen::MatrixXd & V, const Eigen::MatrixXi & 
         A2.col(3) = u.cwiseProduct(v);
         A2.col(4) = v.cwiseProduct(v);
         A2.col(5).setOnes();
-        igl::pinv(A2,A2_pseudo);
+        pinv(A2, A2_pseudo);
         a = A2_pseudo*b;
         // END OF STEP 4
         // STEP 5: BUILD SS
@@ -155,7 +174,7 @@ void per_face_prin_curvature(const Eigen::MatrixXd & V, const Eigen::MatrixXi & 
         if (det==0) {
             Eigen::Matrix2d S2_pseudo;
             S2 << E,FF,FF,G;
-            igl::pinv(S2,S2_pseudo);
+            pinv(S2, S2_pseudo);
             SS = S1*S2_pseudo;
             //std::cout << "Det zero" << std::endl;
         }else{
