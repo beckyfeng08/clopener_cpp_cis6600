@@ -88,6 +88,8 @@ void split_edges_until_bound(Eigen::MatrixXd & V,Eigen::MatrixXi & F, Eigen::Vec
             //std::cout << igl::is_edge_manifold(F) << std::endl;
             //std::cout << "After call to split_edges" << std::endl;
 
+            int new_n = V.rows();
+            is_feature_vertex.resize(new_n, false);
         }
 
 

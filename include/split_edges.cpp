@@ -40,7 +40,28 @@ void split_edges(Eigen::MatrixXd & V, Eigen::MatrixXi & F, Eigen::MatrixXi & E0,
     const int num_edges_to_split = edges_to_split.size();
     // Used for assignments later
 
-    // I don't really know how to get rid of this :'(
+    // // I don't really know how to get rid of this :'(
+    // for (int j = 0; j<r; j++) {
+    //     int add0 = 0;
+    //     if(uE2E[j][0]>=m){
+    //         add0 = 2*num_edges_to_split;
+    //     }
+    //     if(uE2E[j][0]>=(2*m)){
+    //         add0 = 4*num_edges_to_split;
+    //     }
+    //     uE2E[j][0] = uE2E[j][0]+add0;
+    //     int add1 = 0;
+    //     if(uE2E[j][1]>=m){
+    //         add1 = 2*num_edges_to_split;
+    //     }
+    //     if(uE2E[j][1]>=(2*m)){
+    //         add1 = 4*num_edges_to_split;
+    //     }
+    //     uE2E[j][1] = uE2E[j][1]+add1;
+    // }
+    // // I guess it only adds more linear time...
+
+    // Replacing above ^ block with a version that checks for open mesh and handles it
     for (int j = 0; j<r; j++) {
         int add0 = 0;
         if(uE2E[j][0]>=m){
@@ -50,16 +71,17 @@ void split_edges(Eigen::MatrixXd & V, Eigen::MatrixXi & F, Eigen::MatrixXi & E0,
             add0 = 4*num_edges_to_split;
         }
         uE2E[j][0] = uE2E[j][0]+add0;
-        int add1 = 0;
-        if(uE2E[j][1]>=m){
-            add1 = 2*num_edges_to_split;
+        if(uE2E[j].size() > 1) {  // <-- guard for boundary edges
+            int add1 = 0;
+            if(uE2E[j][1]>=m){
+                add1 = 2*num_edges_to_split;
+            }
+            if(uE2E[j][1]>=(2*m)){
+                add1 = 4*num_edges_to_split;
+            }
+            uE2E[j][1] = uE2E[j][1]+add1;
         }
-        if(uE2E[j][1]>=(2*m)){
-            add1 = 4*num_edges_to_split;
-        }
-        uE2E[j][1] = uE2E[j][1]+add1;
     }
-    // I guess it only adds more linear time...
 
     // These are the sizes *after* the splits.
     int num_faces = m+2*num_edges_to_split;

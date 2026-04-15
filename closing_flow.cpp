@@ -18,6 +18,7 @@
 #include <igl/min_quad_with_fixed.h>
 #include <igl/remove_duplicate_vertices.h>
 #include <igl/point_mesh_squared_distance.h>
+#include <igl/edges.h>
 
 namespace cf = closing_flow_detail;
 
@@ -54,7 +55,7 @@ bool closing_flow(
     Eigen::VectorXd M;
     Eigen::VectorXi moving;
 
-
+    // Start the integration thing over params.maxiter timesteps
     // Start the integration thing over params.maxiter timesteps
     // !!!!!!!!!!!!! NOTE: MAXITER IS HARDCODED TO 1 !!!!!!!!!!!!!
     // When we actually run the algorithm it will be like idk 300 or something big
@@ -63,42 +64,30 @@ bool closing_flow(
         Eigen::MatrixXd Vprev = Vfull; // (n, 3)
         Eigen::MatrixXi Fprev = Ffull; // (m, 3)
 
-        // Remove any unreferenced vertices from Vfull/Ffull before computing curvature
-        // This can happen after merging + remeshing leaves isolated vertices
-        Eigen::MatrixXd Vclean;
-        Eigen::MatrixXi Fclean;
-        Eigen::VectorXi Iclean, Jclean;
-        igl::remove_unreferenced(Vfull, Ffull, Vclean, Fclean, Iclean, Jclean);
-        if (Vclean.rows() != Vfull.rows()) {
-            std::cerr << "WARNING: removed " << Vfull.rows() - Vclean.rows()
-                << " unreferenced vertices from Vfull\n";
-            Vfull = Vclean;
-            Ffull = Fclean;
-        }
-
         const int nVerts = Vfull.rows(); // number of total vertices in the mesh
-        //Eigen::VectorXi moving(nVerts); // "active vertices" - those whose min. curvature k < 1/(-r) for closing
-        if (iter == 0) {
-            moving.resize(nVerts);
-        }
+        // Eigen::VectorXi moving(nVerts); // "active vertices" - those whose min. curvature k < 1/(-r) for closing
         Eigen::VectorXi frozen(nVerts); // vertices with 0 flow (dS/dt)
+
+        // Eigen::SparseMatrix<int> A;
+        // Eigen::VectorXd M;
+
+        std::cerr << "=== iter " << iter << " ===\n";
+        std::cerr << "nVerts: " << nVerts << "\n";
+        
+        if (iter > 0) {
+            std::cerr << "A.rows(): " << A.rows() << "\n";
+            std::cerr << "A.nonZeros(): " << A.nonZeros() << "\n";
+            std::cerr << "moving.size(): " << moving.size() << "\n";
+            if (moving.size() > 0)
+                std::cerr << "moving.maxCoeff(): " << moving.maxCoeff() << "\n";
+        }
 
 
         
-
-        if (iter > 0) {
-            std::cerr << "A size: " << A.rows() << " x " << A.cols() << "\n";
-            std::cerr << "moving size: " << moving.size() << "\n";
-            std::cerr << "sanity: nVerts == A.rows()? "
-                << (nVerts == A.rows() ? "YES" : "NO - WARNING") << "\n";
-            if (moving.size() > 0)
-                std::cerr << "sanity: moving max < nVerts? "
-                << (moving.maxCoeff() < nVerts ? "YES" : "NO - WARNING") << "\n";
-        }
-
-        if (iter == 1 || recompute) { // at the very first iteration, or if we are recomputing
-            moving.resize(nVerts);
-
+        // if (iter == 1 || recompute) {
+        if (recompute) { // at the very first iteration, or if we are recomputing
+            moving.resize(nVerts);  // resize here instead of declaring
+            
             // Compute A, sparse matrix with adjacency matrix plus identity for self-loops
             
             igl::adjacency_matrix(Ffull, A); // (n, n)
@@ -106,42 +95,9 @@ bool closing_flow(
                 A.coeffRef(i, i) = 1; // (n, n)
             }
 
-
-            // Diagnostic checks before massmatrix
-            std::cerr << "Vfull rows before massmatrix: " << Vfull.rows() << "\n";
-            std::cerr << "Ffull rows before massmatrix: " << Ffull.rows() << "\n";
-            std::cerr << "Ffull max vertex index: " << Ffull.maxCoeff() << "\n";
-            std::cerr << "sanity Ffull max < Vfull rows? "
-                << (Ffull.maxCoeff() < Vfull.rows() ? "YES" : "NO - WARNING") << "\n";
-
-            // Check for degenerate faces (zero area)
-            Eigen::VectorXd dblA_check;
-            igl::doublearea(Vfull, Ffull, dblA_check);
-            std::cerr << "dblA min: " << dblA_check.minCoeff() << "\n";
-            std::cerr << "dblA max: " << dblA_check.maxCoeff() << "\n";
-            std::cerr << "sanity no zero area faces? "
-                << (dblA_check.minCoeff() > 0 ? "YES" : "NO - WARNING") << "\n";
-            int zero_area_count = (dblA_check.array() <= 0).count();
-            std::cerr << "num zero/negative area faces: " << zero_area_count << "\n";
-
-            // Check for duplicate faces or faces with repeated vertices
-            bool has_degenerate = false;
-            for (int f = 0; f < Ffull.rows(); f++) {
-                if (Ffull(f, 0) == Ffull(f, 1) || Ffull(f, 1) == Ffull(f, 2) || Ffull(f, 0) == Ffull(f, 2)) {
-                    std::cerr << "WARNING: degenerate face " << f << ": "
-                        << Ffull(f, 0) << " " << Ffull(f, 1) << " " << Ffull(f, 2) << "\n";
-                    has_degenerate = true;
-                    break;
-                }
-            }
-            if (!has_degenerate)
-                std::cerr << "no degenerate faces found\n";
-
-
             // mass matrix M
             Eigen::SparseMatrix<double> M_sparse;
             igl::massmatrix(Vfull, Ffull, igl::MASSMATRIX_TYPE_VORONOI, M_sparse);
-            //igl::massmatrix(Vfull, Ffull, igl::MASSMATRIX_TYPE_BARYCENTRIC, M_sparse);
 
             // diagonal elements and clip
             M.resize(Vfull.rows());
@@ -248,6 +204,14 @@ bool closing_flow(
         std::cerr << "num moving vertices: " << moving.size() << "\n";
         std::cerr << "sanity: moving <= active? " << (moving.size() <= (size_t)nActive ? "YES" : "NO") << "\n";
         // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+        std::cerr << "nActive after 2-ring: " << nActive << "\n";
+        std::cerr << "frozen_with_2ring size: " << frozen_with_2ring.size() << "\n";
+        std::cerr << "sanity: nActive + frozen_with_2ring == nVerts? "
+                  << (nActive + (int)frozen_with_2ring.size() == nVerts ? "YES" : "NO - WARNING") << "\n";
+
+
+
             
         // ~~~~~~~~~~~~~~ Active and inactive faces ~~~~~~~~~~~~~
         // Convert isActive bool vector to index vector for incident_faces
@@ -689,215 +653,146 @@ bool closing_flow(
                 << " (should be close to 1.0, large values suggest solver diverged)\n";
         
 
+        int nV_remesh = (int)U.rows();
+        Eigen::VectorXd target_vec = Eigen::VectorXd::Constant(nV_remesh, params.h);
+        const auto t_remesh_start = std::chrono::steady_clock::now();
+        remesh_botsch(U, F, target_vec, params.remesh_iterations, boundary_verts, true);
+        remesh_seconds_total +=
+            std::chrono::duration<double>(std::chrono::steady_clock::now() - t_remesh_start)
+            .count();
+        std::cerr << "Finished remeshing active submesh\n";
+        std::cerr << "U rows after remesh: " << U.rows() << "\n";
+        std::cerr << "F rows after remesh: " << F.rows() << "\n";
 
-        // Get the interior vertices
-        // ── Compute interior_verts BEFORE merge ─────────────────────────────────
-        // interior_verts = setdiff1d(arange(len(U)), boundary_verts_of_U)
-        // Must be done before merge since U/F change after that
-        Eigen::VectorXi boundary_verts_U = cf::get_all_boundary_vids(F);
-        std::vector<bool> isBoundaryU(U.rows(), false);
-        for (int i = 0; i < boundary_verts_U.size(); i++)
-            isBoundaryU[boundary_verts_U(i)] = true;
+        // Compute interior_verts BEFORE merge
+        // boundary_verts = get_all_boundary_vids(F)
+        // interior_verts = setdiff1d(arange(len(U)), boundary_verts)
+        Eigen::VectorXi boundary_verts_remeshed = cf::get_all_boundary_vids(F);
+        std::vector<bool> isBoundary(U.rows(), false);
+        for (int i = 0; i < boundary_verts_remeshed.size(); i++)
+            isBoundary[boundary_verts_remeshed(i)] = true;
         std::vector<int> interior_verts_vec;
         interior_verts_vec.reserve(U.rows());
         for (int i = 0; i < (int)U.rows(); i++)
-            if (!isBoundaryU[i]) interior_verts_vec.push_back(i);
+            if (!isBoundary[i]) interior_verts_vec.push_back(i);
         Eigen::VectorXi interior_verts = Eigen::Map<Eigen::VectorXi>(
             interior_verts_vec.data(), (int)interior_verts_vec.size());
+        std::cerr << "boundary verts after remesh: " << boundary_verts_remeshed.size() << "\n";
+        std::cerr << "interior verts after remesh: " << interior_verts.size() << "\n";
 
-        std::cerr << "interior_verts size (pre-merge): " << interior_verts.size() << "\n";
-        std::cerr << "boundary_verts_U size: " << boundary_verts_U.size() << "\n";
+        // Udup = U  (Python does a shallow copy here, no perturbation applied)
+        Eigen::MatrixXd Udup = U;
 
-
-        // // Remesh the active submesh
-        // The original idea was to remesh the active submesh and then merge it with the frozen vertices, 
-        // but this would require the submesh to be closed and well-formed which isn't guaranteed
-
-        // Merge first, then remesh the full closed mesh
+        // merge active and inactive surface
+        // Vfull = concatenate([v_inactive, Udup], axis=0)
+        // Ffull = concatenate([f_inactive, F + len(v_inactive)], axis=0)
         int n_inactive_verts = (int)v_inactive.rows();
         int n_inactive_faces = (int)f_inactive.rows();
-        int n_active_verts   = (int)U.rows();
+        int n_active_verts   = (int)Udup.rows();
         int n_active_faces   = (int)F.rows();
 
         Eigen::MatrixXd Vfull_new(n_inactive_verts + n_active_verts, 3);
-        Vfull_new.topRows(n_inactive_verts)  = v_inactive;
-        Vfull_new.bottomRows(n_active_verts) = U;
+        Vfull_new.topRows(n_inactive_verts)    = v_inactive;
+        Vfull_new.bottomRows(n_active_verts)   = Udup;
 
         Eigen::MatrixXi Ffull_new(n_inactive_faces + n_active_faces, 3);
-        Ffull_new.topRows(n_inactive_faces)  = f_inactive;
-        Ffull_new.bottomRows(n_active_faces) = F.array() + n_inactive_verts;
+        Ffull_new.topRows(n_inactive_faces)    = f_inactive;
+        Ffull_new.bottomRows(n_active_faces)   = F.array() + n_inactive_verts;
 
         std::cerr << "Vfull_new rows before dedup: " << Vfull_new.rows() << "\n";
         std::cerr << "Ffull_new rows before dedup: " << Ffull_new.rows() << "\n";
 
-        // Remove duplicate vertices at seam
+        // Vfull, SVI, SVJ, Ffull = igl.remove_duplicate_vertices(Vfull, Ffull, 0)
         Eigen::VectorXi SVI, SVJ;
         igl::remove_duplicate_vertices(Vfull_new, Ffull_new, 0, Vfull, SVI, SVJ, Ffull);
 
         std::cerr << "Vfull rows after dedup: " << Vfull.rows() << "\n";
         std::cerr << "Ffull rows after dedup: " << Ffull.rows() << "\n";
-        std::cerr << "sanity SVI size == Vfull rows? "
+        std::cerr << "SVI size: " << SVI.size() << " (should == Vfull.rows())\n";
+        std::cerr << "SVJ size: " << SVJ.size() << " (should == Vfull_new.rows())\n";
+        std::cerr << "sanity SVI size == Vfull rows? " 
                   << (SVI.size() == Vfull.rows() ? "YES" : "NO") << "\n";
-        std::cerr << "sanity SVJ size == Vfull_new rows? "
+        std::cerr << "sanity SVJ size == Vfull_new rows? " 
                   << (SVJ.size() == Vfull_new.rows() ? "YES" : "NO") << "\n";
 
 
-        // frozen_with_2ring has indices into old Vfull
-        // I_inactive maps old Vfull indices -> v_inactive local indices (rows 0..n_inactive_verts-1 in Vfull_new)
-        // SVJ maps Vfull_new indices -> deduped Vfull indices
-        std::vector<int> frozen_remapped_vec;
-        frozen_remapped_vec.reserve(frozen_with_2ring.size());
-        for (int i = 0; i < frozen_with_2ring.size(); i++) {
-            int old_idx = frozen_with_2ring(i);
-            int inactive_local = I_inactive(old_idx); // old Vfull -> v_inactive local
-            if (inactive_local < 0) continue;         // not in inactive submesh, skip
-            int vfull_final_idx = SVJ(inactive_local); // v_inactive local -> deduped Vfull
-            frozen_remapped_vec.push_back(vfull_final_idx);
-        }
-
-        std::sort(frozen_remapped_vec.begin(), frozen_remapped_vec.end());
-        frozen_remapped_vec.erase(
-            std::unique(frozen_remapped_vec.begin(), frozen_remapped_vec.end()),
-            frozen_remapped_vec.end());
-
-        Eigen::VectorXi frozen_remapped = Eigen::Map<Eigen::VectorXi>(
-            frozen_remapped_vec.data(), (int)frozen_remapped_vec.size());
-
-        std::cerr << "frozen_with_2ring size: " << frozen_with_2ring.size() << "\n";
-        std::cerr << "frozen_remapped size: " << frozen_remapped.size() << "\n";
-        std::cerr << "sanity frozen_remapped max < Vfull rows? "
-                  << (frozen_remapped.size() == 0 || frozen_remapped.maxCoeff() < Vfull.rows() ? "YES" : "NO") << "\n";
-        
-
-        // int nV_full = (int)Vfull.rows();
-        // Eigen::VectorXd target_vec = Eigen::VectorXd::Constant(nV_full, params.h);
-        // const auto t_remesh_start = std::chrono::steady_clock::now();
-        // remesh_botsch(Vfull, Ffull, target_vec, params.remesh_iterations, frozen_remapped, true);
-        // remesh_seconds_total +=
-        //     std::chrono::duration<double>(std::chrono::steady_clock::now() - t_remesh_start)
-        //         .count();
-        // std::cerr << "Finished remeshing full mesh\n";
-        // std::cerr << "Vfull rows after remesh: " << Vfull.rows() << "\n";
-        // std::cerr << "Ffull rows after remesh: " << Ffull.rows() << "\n";
-
-
-        // // Compute interior_active_full BEFORE remesh using pre-remesh SVJ
-        // Eigen::VectorXi interior_active_full(interior_verts.size());
-        // for (int i = 0; i < interior_verts.size(); i++)
-        //     interior_active_full(i) = SVJ(interior_verts(i) + n_inactive_verts);
-
-        // std::cerr << "interior_active_full size: " << interior_active_full.size() << "\n";
-        // std::cerr << "interior_active_full max (pre-remesh): "
-        //           << (interior_active_full.size() > 0 ? interior_active_full.maxCoeff() : -1) << "\n";
-        // std::cerr << "Vfull rows (pre-remesh): " << Vfull.rows() << "\n";
-
-        // NOW remesh the full closed mesh
-        int nV_full = (int)Vfull.rows();
-        Eigen::VectorXd target_vec = Eigen::VectorXd::Constant(nV_full, params.h);
-        const auto t_remesh_start = std::chrono::steady_clock::now();
-        remesh_botsch(Vfull, Ffull, target_vec, params.remesh_iterations, frozen_remapped, true);
-        remesh_seconds_total +=
-            std::chrono::duration<double>(std::chrono::steady_clock::now() - t_remesh_start)
-                .count();
-        std::cerr << "Finished remeshing full mesh\n";
-        std::cerr << "Vfull rows after remesh: " << Vfull.rows() << "\n";
-        std::cerr << "Ffull rows after remesh: " << Ffull.rows() << "\n";
-
-        // // Sanity: interior_active_full indices must still be valid after remesh
-        // std::cerr << "sanity interior_active_full max < post-remesh Vfull rows? "
-        //           << (interior_active_full.size() == 0 ||
-        //               interior_active_full.maxCoeff() < Vfull.rows() ? "YES" : "NO - WARNING") << "\n";
-
-
-
-        // // Recompute curvature on the remeshed active submesh and 
-        // // update the moving set for the next iteration
-        // // ── Map interior active vertices into the full merged mesh ──────────────
-        // // interior_active_full = SVJ[interior_verts + len(v_inactive)]
-        // // interior_verts are local indices into U (post-remesh active submesh)
-        // // adding n_inactive_verts gives their index in Vfull_new
-        // // SVJ maps Vfull_new -> deduped Vfull
-        // Eigen::VectorXi interior_active_full(interior_verts.size());
-        // for (int i = 0; i < interior_verts.size(); i++) {
-        //     interior_active_full(i) = SVJ(interior_verts(i) + n_inactive_verts);
-        // }
-
-        // std::cerr << "interior_active_full size: " << interior_active_full.size() << "\n";
-        // std::cerr << "sanity interior_active_full max < Vfull rows? "
-        //           << (interior_active_full.size() == 0 || interior_active_full.maxCoeff() < Vfull.rows() ? "YES" : "NO") << "\n";
-
-
+        // ── Step 4: Map interior verts into full mesh ────────────────────────────
+        // Python: interior_active_full = SVJ[interior_verts + len(v_inactive)]
+        // SVJ is now valid since we haven't remeshed yet after dedup
         Eigen::VectorXi interior_active_full(interior_verts.size());
         for (int i = 0; i < interior_verts.size(); i++)
             interior_active_full(i) = SVJ(interior_verts(i) + n_inactive_verts);
 
-        // Filter out any indices that are out of range after remeshing
-        int nVfull_after_remesh = (int)Vfull.rows();
-        std::vector<int> valid_interior_vec;
-        std::vector<int> valid_interior_local_vec;
-        valid_interior_vec.reserve(interior_active_full.size());
-        valid_interior_local_vec.reserve(interior_active_full.size());
-        for (int i = 0; i < interior_active_full.size(); i++) {
-            if (interior_active_full(i) >= 0 && interior_active_full(i) < nVfull_after_remesh) {
-                valid_interior_vec.push_back(interior_active_full(i));
-                valid_interior_local_vec.push_back(interior_verts(i));
-            }
-        }
-        interior_active_full = Eigen::Map<Eigen::VectorXi>(
-            valid_interior_vec.data(), (int)valid_interior_vec.size());
-        Eigen::VectorXi interior_verts_valid = Eigen::Map<Eigen::VectorXi>(
-            valid_interior_local_vec.data(), (int)valid_interior_local_vec.size());
-
-        std::cerr << "interior_active_full size after filtering: " << interior_active_full.size() << "\n";
+        std::cerr << "interior_active_full size: " << interior_active_full.size() << "\n";
         std::cerr << "sanity interior_active_full max < Vfull rows? "
-                  << (interior_active_full.size() == 0 || 
+                  << (interior_active_full.size() == 0 ||
                       interior_active_full.maxCoeff() < Vfull.rows() ? "YES" : "NO - WARNING") << "\n";
 
+        // ── Step 5: Rebuild A from active region edges ───────────────────────────
+        // Python: E = SVJ[edges(F + len(v_inactive))]
+        //         A = sparse matrix from E + identity
+        int nVfull_post = (int)Vfull.rows();
+        Eigen::MatrixXi F_global = F.array() + n_inactive_verts;
+        Eigen::MatrixXi edges_active;
+        igl::edges(F_global, edges_active);
+
+        A.resize(nVfull_post, nVfull_post);
+        std::vector<Eigen::Triplet<int>> a_trips;
+        a_trips.reserve(edges_active.rows() * 2 + nVfull_post);
+        for (int i = 0; i < edges_active.rows(); i++) {
+            int u = SVJ(edges_active(i, 0));
+            int v = SVJ(edges_active(i, 1));
+            a_trips.emplace_back(u, v, 1);
+            a_trips.emplace_back(v, u, 1);
+        }
+        for (int i = 0; i < nVfull_post; i++)
+            a_trips.emplace_back(i, i, 1);
+        A.setFromTriplets(a_trips.begin(), a_trips.end());
+
+        std::cerr << "A rebuilt (active edges via SVJ), size: " << A.rows() << " x " << A.cols() << "\n";
+        std::cerr << "sanity: A.rows() == Vfull.rows()? "
+                  << (A.rows() == Vfull.rows() ? "YES" : "NO - WARNING") << "\n";
 
 
-        // ── Recompute curvature on remeshed active submesh ──────────────────────
-        // H_interior_active = discrete_mean_curvature(U, F)
-        // K_interior_active = discrete_gaussian_curvature(U, F)
+        // Step 6
+        // Python: H_interior_active = discrete_mean_curvature(U, F)
+        //         K_interior_active = discrete_gaussian_curvature(U, F)
         Eigen::VectorXd H_interior_active = cf::discrete_mean_curvature(U, F);
         Eigen::VectorXd K_interior_active = cf::discrete_gaussian_curvature(U, F);
 
-        // ── Build new mass matrix Mnew for full mesh ────────────────────────────
-        // Mnew = sp.diags(np.ones(len(Vfull)))  -- identity-like diagonal
-        // M_active = massmatrix(U, F)
-        // Mnew[interior_active_full, interior_active_full] += m_active[interior_verts] - 1
+
+        // Step 7
+        // Python: Mnew = sp.diags(np.ones(len(Vfull)))
+        //         M_active = massmatrix(U, F)
+        //         m_active = diagonal of M_active
+        //         Mnew[interior_active_full, interior_active_full] += m_active[interior_verts] - 1
+        //         M = Mnew
         Eigen::SparseMatrix<double> M_active_sparse;
         igl::massmatrix(U, F, igl::MASSMATRIX_TYPE_VORONOI, M_active_sparse);
-        //igl::massmatrix(U, F, igl::MASSMATRIX_TYPE_BARYCENTRIC, M_active_sparse);
         Eigen::VectorXd m_active(U.rows());
-        for (int i = 0; i < (int)U.rows(); i++) {
+        for (int i = 0; i < (int)U.rows(); i++)
             m_active(i) = M_active_sparse.coeff(i, i);
-        }
 
-        // Mnew starts as identity (ones on diagonal)
-        // then updates interior active vertices with their actual mass values
         M.resize(Vfull.rows());
         M.setOnes();
-        // for (int i = 0; i < interior_verts.size(); i++) {
-        //     int full_idx = interior_active_full(i);
-        //     int local_idx = interior_verts(i);
-        //     M(full_idx) = M(full_idx) + m_active(local_idx) - 1.0;
-        // }
-        for (int i = 0; i < interior_verts_valid.size(); i++) {
-            int full_idx = interior_active_full(i);
-            int local_idx = interior_verts_valid(i);
+        for (int i = 0; i < interior_verts.size(); i++) {
+            int full_idx  = interior_active_full(i);
+            int local_idx = interior_verts(i);
             M(full_idx) = M(full_idx) + m_active(local_idx) - 1.0;
         }
-        // clip M
-        for (int i = 0; i < M.size(); i++) {
+        for (int i = 0; i < M.size(); i++)
             M(i) = std::max(M(i), 1e-8);
-        }
 
-        // ── Compute principal curvatures on active submesh ──────────────────────
-        // k_interior_active = H + sqrt(H^2 - M_active * K + 0j)
+        std::cerr << "M updated, size: " << M.size()
+                  << " (should == Vfull.rows() == " << Vfull.rows() << ")\n";
+
+
+        //  Step 8
+        // Python: k_interior_active = H + sqrt(H^2 - M_active*K + 0j)
+        //         K_interior_active = real(k[:,1] / safe_diag(M_active))  (closing)
         Eigen::VectorXd m_active_clipped(U.rows());
-        for (int i = 0; i < (int)U.rows(); i++) {
+        for (int i = 0; i < (int)U.rows(); i++)
             m_active_clipped(i) = std::max(m_active(i), 1e-8);
-        }
 
         Eigen::VectorXd disc_active = H_interior_active.array().square()
                                     - m_active_clipped.array() * K_interior_active.array();
@@ -907,113 +802,37 @@ bool closing_flow(
 
         Eigen::VectorXd K_interior_active_curv;
         if (params.opening) {
-            K_interior_active_curv = (-k_max_active.array() / m_active_clipped.cast<std::complex<double>>().array())
-                                      .real().matrix();
+            K_interior_active_curv = (-k_max_active.array() /
+                m_active_clipped.cast<std::complex<double>>().array()).real().matrix();
         } else {
-            K_interior_active_curv = (k_min_active.array() / m_active_clipped.cast<std::complex<double>>().array())
-                                      .real().matrix();
+            K_interior_active_curv = (k_min_active.array() /
+                m_active_clipped.cast<std::complex<double>>().array()).real().matrix();
         }
 
-        // ── Update moving set for next iteration ────────────────────────────────
-        // moving = zeros(len(Vfull))
-        // moving_interior_active = is_active(K_interior_active)
-        // moving[interior_active_full] = moving_interior_active[interior_verts]
-        // moving = where(moving)[0]
+        // Step 9
+        // Python: moving = zeros(len(Vfull))
+        //         moving_interior_active = is_active(K_interior_active)
+        //         moving[interior_active_full] = moving_interior_active[interior_verts]
+        //         moving = where(moving)[0]
         std::vector<bool> moving_full(Vfull.rows(), false);
-        // for (int i = 0; i < interior_verts.size(); i++) {
-        //     int local_idx = interior_verts(i);
-        //     int full_idx  = interior_active_full(i);
-        //     if (K_interior_active_curv(local_idx) < -params.bd)
-        //         moving_full[full_idx] = true;
-        // }
-        for (int i = 0; i < interior_verts_valid.size(); i++) {
-            int local_idx = interior_verts_valid(i);
+        for (int i = 0; i < interior_verts.size(); i++) {
+            int local_idx = interior_verts(i);
             int full_idx  = interior_active_full(i);
             if (K_interior_active_curv(local_idx) < -params.bd)
                 moving_full[full_idx] = true;
         }
         std::vector<int> moving_vec;
         moving_vec.reserve(Vfull.rows());
-        for (int i = 0; i < (int)Vfull.rows(); i++) {
+        for (int i = 0; i < (int)Vfull.rows(); i++)
             if (moving_full[i]) moving_vec.push_back(i);
-        }
         moving.resize(moving_vec.size());
-        for (int i = 0; i < (int)moving_vec.size(); i++) {
+        for (int i = 0; i < (int)moving_vec.size(); i++)
             moving(i) = moving_vec[i];
-        }
 
         std::cerr << "moving size after update: " << moving.size() << "\n";
 
-        //// ── Rebuild adjacency matrix A for next iteration ───────────────────────
-        //// E = SVJ[edges(F + len(v_inactive))]
-        //// A = csr_matrix from edges + identity
-        //Eigen::MatrixXi F_global = F.array() + n_inactive_verts;
-        //Eigen::MatrixXi edges_local;
-        //igl::edges(F_global, edges_local);
-
-        //// Remap edge endpoints through SVJ into deduped Vfull indices
-        //int nVfull = (int)Vfull.rows();
-        //A.resize(nVfull, nVfull);
-        //std::vector<Eigen::Triplet<int>> a_trips;
-        //a_trips.reserve(edges_local.rows() * 2 + nVfull);
-        //for (int i = 0; i < edges_local.rows(); i++) {
-        //    int u = SVJ(edges_local(i, 0));
-        //    int v = SVJ(edges_local(i, 1));
-        //    a_trips.emplace_back(u, v, 1);
-        //    a_trips.emplace_back(v, u, 1);
-        //}
-        //for (int i = 0; i < nVfull; i++) {
-        //    a_trips.emplace_back(i, i, 1);
-        //}
-        //A.setFromTriplets(a_trips.begin(), a_trips.end());
-
-        // // ── Rebuild adjacency matrix A for next iteration ───────────────────────
-        // // Build from post-remesh Ffull so size always matches new Vfull
-        // int nVfull_post = (int)Vfull.rows();
-        // igl::adjacency_matrix(Ffull, A);
-        // for (int i = 0; i < nVfull_post; i++)
-        //     A.coeffRef(i, i) = 1;
-        // std::cerr << "A rebuilt post-remesh size: " << A.rows() << " x " << A.cols() << "\n";
-        // std::cerr << "sanity: A.rows() == Vfull.rows()? "
-        //     << (A.rows() == Vfull.rows() ? "YES" : "NO - WARNING") << "\n";
-
-        // ── Rebuild adjacency matrix A for next iteration ───────────────────────
-        // Python: A = edges from active region only + identity
-        // This limits 2-ring expansion to stay within the previously active region
-        int nVfull_post = (int)Vfull.rows();
-        A.resize(nVfull_post, nVfull_post);
-        A.setZero();
-
-        // Get edges of the full mesh
-        Eigen::MatrixXi all_edges_post;
-        igl::edges(Ffull, all_edges_post);
-
-        // Only include edges where at least one endpoint was in interior_active_full
-        // (i.e. the active region from this iteration)
-        std::vector<bool> wasActive(nVfull_post, false);
-        for (int i = 0; i < interior_active_full.size(); i++)
-            if (interior_active_full(i) >= 0 && interior_active_full(i) < nVfull_post)
-                wasActive[interior_active_full(i)] = true;
-
-        std::vector<Eigen::Triplet<int>> a_trips_post;
-        a_trips_post.reserve(all_edges_post.rows() * 2 + nVfull_post);
-        for (int i = 0; i < all_edges_post.rows(); i++) {
-            int u = all_edges_post(i, 0);
-            int v = all_edges_post(i, 1);
-            if (wasActive[u] || wasActive[v]) {
-                a_trips_post.emplace_back(u, v, 1);
-                a_trips_post.emplace_back(v, u, 1);
-            }
-        }
-        for (int i = 0; i < nVfull_post; i++)
-            a_trips_post.emplace_back(i, i, 1);
-        A.setFromTriplets(a_trips_post.begin(), a_trips_post.end());
-
-        std::cerr << "A rebuilt (active-only edges), size: " << A.rows() << " x " << A.cols() << "\n";
-        std::cerr << "sanity: A.rows() == Vfull.rows()? "
-                  << (A.rows() == Vfull.rows() ? "YES" : "NO - WARNING") << "\n";
-
-        // ── Convergence check every 10 iterations ───────────────────────────────
+        // step 10: convergence check
+        // Python: if (iter + 1) % 10 == 0: check point_mesh_squared_distance
         if ((iter + 1) % 10 == 0) {
             Eigen::VectorXd sqr_dist;
             Eigen::VectorXi closest_faces;
@@ -1026,10 +845,10 @@ bool closing_flow(
                 break;
             }
         }
-        
+
     }
 
-    const double flow_seconds_total = 
+    const double flow_seconds_total =
         std::chrono::duration<double>(std::chrono::steady_clock::now() - t_flow_start)
             .count();
     std::cerr << "closing_flow total time: " << flow_seconds_total << " s\n";
