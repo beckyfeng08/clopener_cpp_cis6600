@@ -39,14 +39,42 @@ ClosingFlow::ClosingFlow(const Eigen::MatrixXd& V_in,
     }
 
     if (params_.verbose) {
-        std::cerr << "Shape of Vfull: (" << Vfull_.rows() << ", " << Vfull_.cols()
-                  << ")\n";
-        std::cerr << "Shape of Ffull: (" << Ffull_.rows() << ", " << Ffull_.cols()
-                  << ")\n";
+        std::cerr << "Shape of Vfull: (" << Vfull_.rows() << ", " << Vfull_.cols() << ")\n";
+        std::cerr << "Shape of Ffull: (" << Ffull_.rows() << ", " << Ffull_.cols() << ")\n";
     }
 
     // recompute_ starts true so the first step() does the full setup
     // (A_, M_, moving_ all get computed in the recompute block below)
+
+    // ---- Convert vertex-index selection to positional selection ----
+    // We snapshot the selected vertices' positions now, before any remeshing
+    // has changed the vertex set. Step 9 will use spatial proximity to decide
+    // which post-remesh vertices belong to the selected region.
+    if (params_.selection.size() > 0) {
+        const int k = (int)params_.selection.size();
+        selection_positions_.resize(k, 3);
+        int kept = 0;
+        for (int i = 0; i < k; ++i) {
+            int idx = params_.selection(i);
+            if (idx >= 0 && idx < V_in.rows()) {
+                selection_positions_.row(kept++) = V_in.row(idx);
+            }
+        }
+        selection_positions_.conservativeResize(kept, 3);
+
+        // Tolerance: a vertex counts as "in selection" if its squared distance
+        // to the nearest original selected vertex is below tol_sq.
+        // Using a fraction of the average input edge length keeps this scale-aware.
+        double avg_edge = igl::avg_edge_length(V_in, F_in);
+        double tol      = 0.75 * avg_edge;   // a bit less than one edge
+        selection_tol_sq_ = tol * tol;
+
+        if (params_.verbose) {
+            std::cerr << "selection: " << kept << " positions stored, "
+                      << "proximity tolerance = " << tol
+                      << " (avg edge length = " << avg_edge << ")\n";
+        }
+    }
 }
 
 // =============================================================================
@@ -822,11 +850,54 @@ bool ClosingFlow::step()
     }
 
     // ── Step 9 ────────────────────────────────────────────────────────────────
+    // Rebuild moving_ from post-remesh interior vertices that (a) have high
+    // curvature AND (b) lie within the user's selected region (if any).
+    //
+    // (b) is checked geometrically because remeshing has invalidated the
+    // original vertex indexing. We compare each candidate's *position* to the
+    // snapshot of selected positions taken at construction time.
+    const bool use_selection = selection_positions_.rows() > 0;
+
+    // Pre-compute "is this Vfull_ vertex inside the selected region?" once.
+    // We only need the answer for vertices in interior_active_full, but
+    // computing for all of Vfull_ once and indexing into it is cleaner and
+    // the cost is dominated by the kNN lookup itself.
+    std::vector<bool> in_selection;
+    if (use_selection) {
+        in_selection.assign(Vfull_.rows(), false);
+
+        // For each interior_active_full vertex, find squared distance to the
+        // nearest stored selection position. We use point_mesh_squared_distance
+        // with a degenerate "mesh" of just the selection points (no faces)
+        // — but that API needs faces, so we use a direct loop instead.
+        // For typical selection sizes (hundreds to low thousands) this is fast.
+        //
+        // If your selections get huge (10k+) and this becomes a hotspot,
+        // build a KD-tree once with nanoflann or igl::octree.
+        for (int i = 0; i < interior_active_full.size(); ++i) {
+            int full_idx = interior_active_full(i);
+            Eigen::RowVector3d p = Vfull_.row(full_idx);
+
+            double min_d2 = std::numeric_limits<double>::max();
+            for (int j = 0; j < selection_positions_.rows(); ++j) {
+                double d2 = (p - selection_positions_.row(j)).squaredNorm();
+                if (d2 < min_d2) {
+                    min_d2 = d2;
+                    if (min_d2 < selection_tol_sq_) break;  // early out
+                }
+            }
+            if (min_d2 < selection_tol_sq_)
+                in_selection[full_idx] = true;
+        }
+    }
+
     std::vector<bool> moving_full(Vfull_.rows(), false);
     for (int i = 0; i < interior_verts.size(); i++) {
         int local_idx = interior_verts(i);
         int full_idx  = interior_active_full(i);
-        if (K_interior_active_curv(local_idx) < -params_.bd)
+        bool is_curvy   = K_interior_active_curv(local_idx) < -params_.bd;
+        bool is_allowed = !use_selection || in_selection[full_idx];
+        if (is_curvy && is_allowed)
             moving_full[full_idx] = true;
     }
     std::vector<int> moving_vec;
@@ -839,6 +910,10 @@ bool ClosingFlow::step()
 
     if (params_.verbose) {
         std::cerr << "moving size after update: " << moving_.size() << "\n";
+        if (use_selection) {
+            int n_in_sel = (int)std::count(in_selection.begin(), in_selection.end(), true);
+            std::cerr << "  vertices inside selection region: " << n_in_sel << "\n";
+        }
     }
 
     // ── Step 10: convergence check ────────────────────────────────────────────
