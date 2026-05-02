@@ -2,6 +2,7 @@
 #include <Eigen/Core>
 #include <igl/read_triangle_mesh.h>
 #include <igl/write_triangle_mesh.h>
+#include <chrono>
 #include <cstdio>
 #include <iostream>
 #include <memory>
@@ -33,39 +34,42 @@ int main(int argc, char *argv[])
   }
 
   ClosingFlowParams params;
+  // testing: select only half of the bunny for testing
+  // std::vector<int> sel;
+  // for (int i = 0; i < V.rows(); ++i) {
+  //     if (V(i, 2) > 0.0) sel.push_back(i);   // pick verts on one side
+  // }
+  // params.selection = Eigen::Map<Eigen::VectorXi>(sel.data(), (int)sel.size());
 
   igl::opengl::glfw::Viewer viewer;
   viewer.data().set_mesh(V, F);
   viewer.data().set_face_based(true);
 
   // ~~~~~~~~~~~ STEP 1: SHARED STATE FOR THE STEPPER ~~~~~~~~~~~~
-  // These are owned by main() and captured by reference in the callbacks.
   std::unique_ptr<ClosingFlow> flow;
   bool running = false;
+  std::chrono::steady_clock::time_point flow_start_time;
 
   // ~~~~~~~~~~~ STEP 2: HANDLE INPUTS ~~~~~~~~~~~~
 
   std::cerr << "Press c to run closing_flow on the current mesh.\n";
 
-  // 'c' key starts a new flow. The actual stepping happens in the pre-draw callback.
   viewer.callback_key_pressed =
       [&](igl::opengl::glfw::Viewer &v, unsigned int key, int) -> bool {
-        if (key != 'c' && key != 'C') {
-          return false;
-        }
+        if (key != 'c' && key != 'C') return false;
 
         if (running) {
           std::cerr << "Flow already running, ignoring key press\n";
           return true;
         }
 
-        // Snapshot iteration 0 (initial state) so the user can scrub back to it
         igl::write_triangle_mesh("../data/iters/iter_0000.obj", V, F);
 
         try {
           flow = std::make_unique<ClosingFlow>(V, F, params);
           running = true;
-          v.core().is_animating = true;  // make the viewer redraw continuously
+          flow_start_time = std::chrono::steady_clock::now();   // start timer
+          v.core().is_animating = true;
           std::cerr << "Started closing_flow\n";
         } catch (const std::exception& e) {
           std::cerr << "Failed to start closing_flow: " << e.what() << "\n";
@@ -73,9 +77,6 @@ int main(int argc, char *argv[])
         return true;
       };
 
-  // pre_draw fires every frame the viewer renders. While `running` is true,
-  // we run one closing_flow iteration per frame, push the new mesh to the
-  // viewer, and write the snapshot to disk.
   viewer.callback_pre_draw =
       [&](igl::opengl::glfw::Viewer &v) -> bool {
         if (!running || !flow) return false;
@@ -90,7 +91,6 @@ int main(int argc, char *argv[])
           return false;
         }
 
-        // Pull the updated mesh and push to the viewer
         V = flow->current_V();
         F = flow->current_F();
         v.data().clear();
@@ -105,22 +105,37 @@ int main(int argc, char *argv[])
           std::cerr << "Failed to write " << fname << "\n";
         }
 
-        // Stop condition: flow says we're done, or we've hit maxiter
+        // Stop condition
         if (!keep_going || flow->iteration() >= params.maxiter) {
           running = false;
           v.core().is_animating = false;
+
+          // ~~~~~~~~~~~ STEP 4: STOP TIMER & REPORT ~~~~~~~~~~~~
+          const double total_seconds =
+              std::chrono::duration<double>(
+                  std::chrono::steady_clock::now() - flow_start_time).count();
+          const double remesh_seconds  = flow->remesh_seconds_total();
+          const double other_seconds   = total_seconds - remesh_seconds;
+          const int    n_iters         = flow->iteration();
+          const double per_iter        = (n_iters > 0)
+                                       ? total_seconds / n_iters
+                                       : 0.0;
 
           if (!igl::write_triangle_mesh("../data/mesh_remeshed.obj", V, F)) {
             std::cerr << "Failed to write ../data/mesh_remeshed.obj\n";
           } else {
             std::cerr << "Successfully wrote ../data/mesh_remeshed.obj\n";
           }
-          std::cerr << "closing_flow finished after " << flow->iteration()
+          std::cerr << "closing_flow finished after " << n_iters
                     << " iterations (snapshots saved as iter_NNNN.obj)\n";
+          std::cerr << "  total time:    " << total_seconds  << " s\n";
+          std::cerr << "  remesh time:   " << remesh_seconds << " s\n";
+          std::cerr << "  other time:    " << other_seconds  << " s\n";
+          std::cerr << "  avg per iter:  " << per_iter       << " s\n";
           std::cerr << "Press c to run again on current mesh.\n";
         }
 
-        return false;  // don't suppress the actual draw
+        return false;
       };
 
   viewer.launch();

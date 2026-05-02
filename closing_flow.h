@@ -10,7 +10,7 @@
 class ClosingFlow {
 public:
     ClosingFlow(const Eigen::MatrixXd& V_in,
-                const Eigen::MatrixXi& F_in,
+                const Eigen::MatrixXi& F_in,                
                 const ClosingFlowParams& params);
 
     // Run one iteration. Returns true if the flow should continue,
@@ -30,7 +30,7 @@ public:
     // Allow host to request early termination (e.g. Esc in Maya)
     void cancel() { converged_ = true; }
 
-    // Timing accessors (parity with original)
+    // Timing accessors
     double remesh_seconds_total() const { return remesh_seconds_total_; }
 
 private:

@@ -97,11 +97,7 @@ bool ClosingFlow::step()
             M_(i) = std::max(M_sparse.coeff(i, i), 1e-8);
         }
 
-        // Gaussian curvature K (both methods produce same number vertices - result from one test)
-        // Method 1: built-in libigl function
-        // Eigen::VectorXd K;
-        // igl::gaussian_curvature(Vfull_, Ffull_, K);
-        // Method 2: match python
+        // Gaussian curvature K
         Eigen::VectorXd K = cf::discrete_gaussian_curvature(Vfull_, Ffull_);
 
         Eigen::VectorXd H = cf::discrete_mean_curvature(Vfull_, Ffull_);
@@ -112,7 +108,7 @@ bool ClosingFlow::step()
         Eigen::VectorXcd k_max = H.cast<std::complex<double>>() + sqrtDisc;
         Eigen::VectorXcd k_min = H.cast<std::complex<double>>() - sqrtDisc;
 
-        // Divide by M and take real part (matches Python's np.real(...))
+        // Divide by M and take real part
         Eigen::VectorXd curv;
         if (params_.opening) {
             curv = (-k_max.array() / M_.cast<std::complex<double>>().array()).real().matrix();
@@ -120,12 +116,31 @@ bool ClosingFlow::step()
             curv = (k_min.array() / M_.cast<std::complex<double>>().array()).real().matrix();
         }
 
-        // Active vertices where curv < -bd
+        // Active vertices where curv < -bd AND (if a selection is provided) the
+        // vertex is in the user's selection. Empty selection = whole mesh eligible.
         // Closing: k_min < -bd
         // Opening: k_max > bd <-> -k_max < -bd
+        const bool use_selection = params_.selection.size() > 0;
+        std::vector<bool> in_selection;
+        if (use_selection) {
+            in_selection.assign(nVerts, false);
+            for (int i = 0; i < params_.selection.size(); ++i) {
+                int idx = params_.selection(i);
+                if (idx >= 0 && idx < nVerts) {
+                    in_selection[idx] = true;
+                }
+            }
+            if (params_.verbose) {
+                std::cerr << "selection size: " << params_.selection.size()
+                        << " (out of " << nVerts << " vertices)\n";
+            }
+        }
+
         Eigen::Index nmov = 0, nfroz = 0;
         for (Eigen::Index i = 0; i < nVerts; ++i) {
-            if (curv(i) < -params_.bd) {
+            bool is_curvy   = curv(i) < -params_.bd;
+            bool is_allowed = !use_selection || in_selection[i];
+            if (is_curvy && is_allowed) {
                 moving_(nmov) = static_cast<int>(i);
                 nmov++;
             } else {
@@ -684,7 +699,7 @@ bool ClosingFlow::step()
         std::cerr << "interior verts after remesh: " << interior_verts.size() << "\n";
     }
 
-    // Udup = U  (Python does a shallow copy here, no perturbation applied)
+    // Udup = U
     Eigen::MatrixXd Udup = U;
 
     // -------------------------------------------------------------------------
