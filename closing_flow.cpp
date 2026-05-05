@@ -701,7 +701,7 @@ bool ClosingFlow::step()
     int nV_remesh = (int)U.rows();
     // Use percentage of average edge length as the target edge length
     double target_edge_length;
-    if (params_.uae) {
+    if (params_.use_relative) {
         target_edge_length = params_.frac_of_avg_edge * avg_edge_;
     } else {
         target_edge_length = params_.h;
