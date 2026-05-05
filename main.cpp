@@ -18,7 +18,7 @@ int main(int argc, char *argv[])
   const std::string mesh_path =
       (argc > 1 && argv[1] != nullptr && argv[1][0] != '\0')
           ? std::string(argv[1])
-          : std::string("../data/bunny.obj");
+          : std::string("../data/godzilla.obj");
 
   if (!igl::read_triangle_mesh(mesh_path, V, F)) {
     std::cerr << "Failed to load mesh: " << mesh_path << "\n";
@@ -34,12 +34,6 @@ int main(int argc, char *argv[])
   }
 
   ClosingFlowParams params;
-  // testing: select only half of the bunny for testing
-  // std::vector<int> sel;
-  // for (int i = 0; i < V.rows(); ++i) {
-  //     if (V(i, 2) > 0.0) sel.push_back(i);   // pick verts on one side
-  // }
-  // params.selection = Eigen::Map<Eigen::VectorXi>(sel.data(), (int)sel.size());
 
   igl::opengl::glfw::Viewer viewer;
   viewer.data().set_mesh(V, F);

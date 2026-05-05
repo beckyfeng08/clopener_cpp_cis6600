@@ -36,8 +36,9 @@ Eigen::MatrixXd dihedral_angles(
 
     // Face normals
     Eigen::MatrixXd FN;
-    Eigen::MatrixXd Z = Eigen::MatrixXd::Constant(F.rows(), 3, 1.0/3.0);
-    igl::per_face_normals(V, F, Z, FN);
+    // Eigen::MatrixXd Z = Eigen::MatrixXd::Constant(F.rows(), 3, 1.0/3.0);
+    // igl::per_face_normals(V, F, Z, FN);
+    igl::per_face_normals(V, F, FN);
 
     // Face barycenters
     Eigen::MatrixXd BC;

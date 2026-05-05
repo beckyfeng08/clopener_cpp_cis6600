@@ -38,6 +38,8 @@ ClosingFlow::ClosingFlow(const Eigen::MatrixXd& V_in,
             "ClosingFlow: V must be (n,3) and F must be (m,3)");
     }
 
+    params_.avg_edge = igl::avg_edge_length(V_in, F_in);
+    std::cerr << "avg edge length = " << params_.avg_edge << "\n";
     if (params_.verbose) {
         std::cerr << "Shape of Vfull: (" << Vfull_.rows() << ", " << Vfull_.cols() << ")\n";
         std::cerr << "Shape of Ffull: (" << Ffull_.rows() << ", " << Ffull_.cols() << ")\n";
@@ -65,14 +67,13 @@ ClosingFlow::ClosingFlow(const Eigen::MatrixXd& V_in,
         // Tolerance: a vertex counts as "in selection" if its squared distance
         // to the nearest original selected vertex is below tol_sq.
         // Using a fraction of the average input edge length keeps this scale-aware.
-        double avg_edge = igl::avg_edge_length(V_in, F_in);
-        double tol      = 0.75 * avg_edge;   // a bit less than one edge
+        double tol      = 0.75 * params_.avg_edge;   // a bit less than one edge
         selection_tol_sq_ = tol * tol;
 
         if (params_.verbose) {
             std::cerr << "selection: " << kept << " positions stored, "
                       << "proximity tolerance = " << tol
-                      << " (avg edge length = " << avg_edge << ")\n";
+                      << " (avg edge length = " << params_.avg_edge << ")\n";
         }
     }
 }
@@ -698,7 +699,11 @@ bool ClosingFlow::step()
     // Remesh
     // -------------------------------------------------------------------------
     int nV_remesh = (int)U.rows();
-    Eigen::VectorXd target_vec = Eigen::VectorXd::Constant(nV_remesh, params_.h);
+    // Use percentage of average edge length as the target edge length
+    double target_edge_length = params_.avg_edge * params_.h;
+
+
+    Eigen::VectorXd target_vec = Eigen::VectorXd::Constant(nV_remesh, target_edge_length);
     const auto t_remesh_start = std::chrono::steady_clock::now();
     remesh_botsch(U, F, target_vec, params_.remesh_iterations, boundary_verts, true);
     remesh_seconds_total_ +=
