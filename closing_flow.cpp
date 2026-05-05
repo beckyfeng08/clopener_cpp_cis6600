@@ -38,8 +38,8 @@ ClosingFlow::ClosingFlow(const Eigen::MatrixXd& V_in,
             "ClosingFlow: V must be (n,3) and F must be (m,3)");
     }
 
-    params_.avg_edge = igl::avg_edge_length(V_in, F_in);
-    std::cerr << "avg edge length = " << params_.avg_edge << "\n";
+    avg_edge_ = igl::avg_edge_length(V_in, F_in);
+    std::cerr << "avg edge length = " << avg_edge_ << "\n";
     if (params_.verbose) {
         std::cerr << "Shape of Vfull: (" << Vfull_.rows() << ", " << Vfull_.cols() << ")\n";
         std::cerr << "Shape of Ffull: (" << Ffull_.rows() << ", " << Ffull_.cols() << ")\n";
@@ -67,13 +67,13 @@ ClosingFlow::ClosingFlow(const Eigen::MatrixXd& V_in,
         // Tolerance: a vertex counts as "in selection" if its squared distance
         // to the nearest original selected vertex is below tol_sq.
         // Using a fraction of the average input edge length keeps this scale-aware.
-        double tol      = 0.75 * params_.avg_edge;   // a bit less than one edge
+        double tol      = 0.75 * avg_edge_;   // a bit less than one edge
         selection_tol_sq_ = tol * tol;
 
         if (params_.verbose) {
             std::cerr << "selection: " << kept << " positions stored, "
                       << "proximity tolerance = " << tol
-                      << " (avg edge length = " << params_.avg_edge << ")\n";
+                      << " (avg edge length = " << avg_edge_ << ")\n";
         }
     }
 }
@@ -700,8 +700,12 @@ bool ClosingFlow::step()
     // -------------------------------------------------------------------------
     int nV_remesh = (int)U.rows();
     // Use percentage of average edge length as the target edge length
-    double target_edge_length = params_.avg_edge * params_.h;
-
+    double target_edge_length;
+    if (params_.uae) {
+        target_edge_length = params_.frac_of_avg_edge * avg_edge_;
+    } else {
+        target_edge_length = params_.h;
+    }
 
     Eigen::VectorXd target_vec = Eigen::VectorXd::Constant(nV_remesh, target_edge_length);
     const auto t_remesh_start = std::chrono::steady_clock::now();

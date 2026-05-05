@@ -44,6 +44,7 @@ private:
     bool                     converged_ = false;
     int                      iter_ = 0;
     ClosingFlowParams        params_;
+    double                   avg_edge_;
     double                   remesh_seconds_total_ = 0.0;
     // Selection in geometric form: original positions of user-selected vertices.
     // We store positions instead of indices because remeshing destroys the
