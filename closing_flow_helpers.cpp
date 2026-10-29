@@ -106,9 +106,11 @@ Eigen::VectorXd discrete_mean_curvature(
     // EMAP is F.rows()*3 long, stored column-major as (F, 3)
     int nF = F.rows();
     Eigen::MatrixXi emap_mat(nF, 3);
-    for (int j = 0; j < 3; j++)
-        for (int i = 0; i < nF; i++)
+    for (int j = 0; j < 3; j++) {
+        for (int i = 0; i < nF; i++) {
             emap_mat(i, j) = EMAP(j * nF + i);
+        }
+    }
 
     // Permute columns [2,0,1]
     Eigen::MatrixXi emap(nF, 3);
@@ -119,17 +121,22 @@ Eigen::VectorXd discrete_mean_curvature(
     // Adjacency matrix is TT
 
     // Fix boundary: set A to pi where adj < 0 so (pi - A) = 0
-    for (int f = 0; f < nF; f++)
-        for (int e = 0; e < 3; e++)
-            if (TT(f, e) < 0)
+    for (int f = 0; f < nF; f++) {
+        for (int e = 0; e < 3; e++) {
+            if (TT(f, e) < 0) {
                 A(f, e) = kPi;
+            }
+        }
+    }
 
     // cur = 0.5 * 0.5 * 0.5 * (pi - A) * L, flattened
     // vector of val
     Eigen::VectorXd cur(nF * 3);
-    for (int f = 0; f < nF; f++)
-        for (int e = 0; e < 3; e++)
+    for (int f = 0; f < nF; f++) {
+        for (int e = 0; e < 3; e++) {
             cur(f * 3 + e) = 0.125 * (kPi - A(f, e)) * L(f, e);
+        }
+    }
 
     // Accumulate onto vertices via edge endpoints
     Eigen::VectorXd H = Eigen::VectorXd::Zero(V.rows());
@@ -155,9 +162,11 @@ Eigen::VectorXi get_all_boundary_vids(const Eigen::MatrixXi& F)
  
     Eigen::VectorXi bnd(total);
     int idx = 0;
-    for (const auto& lp : loops)
-        for (int v : lp)
+    for (const auto& lp : loops) {
+        for (int v : lp) {
             bnd(idx++) = v;
+        }
+    }
     return bnd;
 }
 
@@ -170,14 +179,17 @@ Eigen::VectorXd discrete_gaussian_curvature(
     igl::internal_angles(V, F, angles); // (nF, 3)
 
     Eigen::VectorXd K = Eigen::VectorXd::Constant(V.rows(), 2.0 * kPi);
-    for (int f = 0; f < F.rows(); f++)
-        for (int e = 0; e < 3; e++)
+    for (int f = 0; f < F.rows(); f++) {
+        for (int e = 0; e < 3; e++) {
             K(F(f, e)) -= angles(f, e);
+        }
+    }
 
     // Boundary correction
     Eigen::VectorXi bnd = get_all_boundary_vids(F);
-    for (int i = 0; i < bnd.size(); i++)
+    for (int i = 0; i < bnd.size(); i++) {
         K(bnd(i)) -= kPi;
+    }
 
     return K;
 }
@@ -192,25 +204,30 @@ Eigen::VectorXi incident_faces(
 
     // selected[v] = true if v is in vids
     std::vector<bool> selected(nV, false);
-    for (int i = 0; i < vids.size(); i++)
+    for (int i = 0; i < vids.size(); i++) {
         selected[vids(i)] = true;
+    }
 
     // Count how many vertices of each face are selected
     std::vector<int> result;
     for (int f = 0; f < nF; f++)
     {
         int count = 0;
-        for (int e = 0; e < F.cols(); e++)
-            if (selected[F(f, e)])
+        for (int e = 0; e < F.cols(); e++) {
+            if (selected[F(f, e)]) {
                 count++;
-        if (count >= v_incidence)
+            }
+        }
+        if (count >= v_incidence) {
             result.push_back(f);
+        }
     }
 
     // Convert to Eigen vector
     Eigen::VectorXi out(result.size());
-    for (int i = 0; i < (int)result.size(); i++)
+    for (int i = 0; i < (int)result.size(); i++) {
         out(i) = result[i];
+    }
     return out;
 }
 
@@ -219,9 +236,12 @@ std::vector<bool> expandRing(const Eigen::SparseMatrix<int>& A, const std::vecto
     int nVerts = (int)inSet.size();
     std::vector<bool> result(nVerts, false);
     for (int j = 0; j < nVerts; ++j) {
-        if (!inSet[j]) continue;
-        for (Eigen::SparseMatrix<int>::InnerIterator it(A, j); it; ++it)
+        if (!inSet[j]) {
+            continue;
+        }
+        for (Eigen::SparseMatrix<int>::InnerIterator it(A, j); it; ++it) {
             result[it.row()] = true;
+        }
     }
     return result;
 }
