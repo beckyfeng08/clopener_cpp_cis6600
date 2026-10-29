@@ -50,7 +50,7 @@ ClosingFlow::ClosingFlow(const Eigen::MatrixXd& V_in,
 
     // ---- Convert vertex-index selection to positional selection ----
     // We snapshot the selected vertices' positions now, before any remeshing
-    // has changed the vertex set. Step 9d will use spatial proximity to decide
+    // has changed the vertex set. Step 12 will use spatial proximity to decide
     // which post-remesh vertices belong to the selected region.
     if (params_.selection.size() > 0) {
         const int k = (int)params_.selection.size();
@@ -750,7 +750,7 @@ bool ClosingFlow::step()
     // Udup = U
     Eigen::MatrixXd Udup = U;
 
-    // -- Step 9a: Merge active and inactive submeshes -------------------------
+    // -- Step 6: Merge active and inactive submeshes -------------------------
     int n_inactive_verts = (int)v_inactive.rows();
     int n_inactive_faces = (int)f_inactive.rows();
     int n_active_verts   = (int)Udup.rows();
@@ -783,7 +783,7 @@ bool ClosingFlow::step()
                   << (SVJ.size() == Vfull_new.rows() ? "YES" : "NO") << "\n";
     }
 
-    // -- Step 9b: Map interior verts into full mesh via SVJ ---------------------
+    // -- Step 7: Map interior verts into full mesh via SVJ ----------------------
     Eigen::VectorXi interior_active_full(interior_verts.size());
     for (int i = 0; i < interior_verts.size(); i++) {
         interior_active_full(i) = SVJ(interior_verts(i) + n_inactive_verts);
@@ -796,7 +796,7 @@ bool ClosingFlow::step()
                       interior_active_full.maxCoeff() < Vfull_.rows() ? "YES" : "NO - WARNING") << "\n";
     }
 
-    // -- Step 9c: Rebuild adjacency A from active region edges ------------------
+    // -- Step 8: Rebuild adjacency A from active region edges -------------------
     int nVfull_post = (int)Vfull_.rows();
     Eigen::MatrixXi F_global = F.array() + n_inactive_verts;
     Eigen::MatrixXi edges_active;
@@ -823,11 +823,11 @@ bool ClosingFlow::step()
                   << (A_.rows() == Vfull_.rows() ? "YES" : "NO - WARNING") << "\n";
     }
 
-    // -- Step 6: Recompute curvature on remeshed active submesh -------------------
+    // -- Step 9: Recompute curvature on remeshed active submesh -------------------
     Eigen::VectorXd H_interior_active = cf::discrete_mean_curvature(U, F);
     Eigen::VectorXd K_interior_active = cf::discrete_gaussian_curvature(U, F);
 
-    // -- Step 7: Update mass matrix M_ over full mesh (Mnew) ----------------------
+    // -- Step 10: Update mass matrix M_ over full mesh (Mnew) ----------------------
     Eigen::SparseMatrix<double> M_active_sparse;
     igl::massmatrix(U, F, igl::MASSMATRIX_TYPE_VORONOI, M_active_sparse);
     Eigen::VectorXd m_active(U.rows());
@@ -851,7 +851,7 @@ bool ClosingFlow::step()
                   << " (should == Vfull.rows() == " << Vfull_.rows() << ")\n";
     }
 
-    // -- Step 8: Recompute principal curvatures on active submesh --------------------
+    // -- Step 11: Recompute principal curvatures on active submesh --------------------
     Eigen::VectorXd m_active_clipped(U.rows());
     for (int i = 0; i < (int)U.rows(); i++) {
         m_active_clipped(i) = std::max(m_active(i), 1e-8);
@@ -872,7 +872,7 @@ bool ClosingFlow::step()
             m_active_clipped.cast<std::complex<double>>().array()).real().matrix();
     }
 
-    // -- Step 9 -----------------------------------------------------------------
+    // -- Step 12 -----------------------------------------------------------------
     // Rebuild moving_ from post-remesh interior vertices that (a) have high
     // curvature AND (b) lie within the user's selected region (if any).
     //
@@ -942,7 +942,7 @@ bool ClosingFlow::step()
         }
     }
 
-    // -- Step 10: convergence check ------------------------------------------------
+    // -- Step 13: convergence check ------------------------------------------------
     if ((iter_ + 1) % 10 == 0) {
         Eigen::VectorXd sqr_dist;
         Eigen::VectorXi closest_faces;
