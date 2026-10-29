@@ -50,7 +50,7 @@ ClosingFlow::ClosingFlow(const Eigen::MatrixXd& V_in,
 
     // ---- Convert vertex-index selection to positional selection ----
     // We snapshot the selected vertices' positions now, before any remeshing
-    // has changed the vertex set. Step 9 will use spatial proximity to decide
+    // has changed the vertex set. Step 9d will use spatial proximity to decide
     // which post-remesh vertices belong to the selected region.
     if (params_.selection.size() > 0) {
         const int k = (int)params_.selection.size();
@@ -83,7 +83,9 @@ ClosingFlow::ClosingFlow(const Eigen::MatrixXd& V_in,
 // =============================================================================
 bool ClosingFlow::step()
 {
-    if (converged_) return false;
+    if (converged_) {
+        return false;
+    }
 
     Eigen::MatrixXd Vprev = Vfull_; // (n, 3)
     Eigen::MatrixXi Fprev = Ffull_; // (m, 3)
@@ -104,9 +106,7 @@ bool ClosingFlow::step()
         }
     }
 
-    // -------------------------------------------------------------------------
-    // RECOMPUTE BLOCK: A, M, moving
-    // -------------------------------------------------------------------------
+    // -- Step 1: Recompute curvature and active set (A, M, moving) ------------
     if (recompute_) { // at the very first iteration, or if we are recomputing
         moving_.resize(nVerts);  // resize here instead of declaring
 
@@ -198,9 +198,7 @@ bool ClosingFlow::step()
         return false;
     }
 
-    // -------------------------------------------------------------------------
-    // 2-ring expansion
-    // -------------------------------------------------------------------------
+    // -- Step 2: 2-ring expansion ---------------------------------------------
     std::vector<bool> isMoving(nVerts, false);
     for (int i = 0; i < moving_.size(); ++i) {
         isMoving[moving_(i)] = true;
@@ -239,13 +237,13 @@ bool ClosingFlow::step()
                   << (nActive + (int)frozen_with_2ring.size() == nVerts ? "YES" : "NO - WARNING") << "\n";
     }
 
-    // -------------------------------------------------------------------------
-    // Active and inactive faces
-    // -------------------------------------------------------------------------
+    // -- Step 3: Split mesh into active and inactive submeshes ----------------
     std::vector<int> active_vec;
     active_vec.reserve(nVerts);
     for (int i = 0; i < nVerts; ++i) {
-        if (isActive[i]) active_vec.push_back(i);
+        if (isActive[i]) {
+            active_vec.push_back(i);
+        }
     }
     Eigen::VectorXi active = Eigen::Map<Eigen::VectorXi>(active_vec.data(), (int)active_vec.size());
 
@@ -270,7 +268,9 @@ bool ClosingFlow::step()
     std::vector<int> fid_inactive_vec;
     fid_inactive_vec.reserve(Ffull_.rows() - fid_active.size());
     for (int f = 0; f < Ffull_.rows(); f++) {
-        if (!isFaceActive[f]) fid_inactive_vec.push_back(f);
+        if (!isFaceActive[f]) {
+            fid_inactive_vec.push_back(f);
+        }
     }
 
     Eigen::VectorXi fid_inactive = Eigen::Map<Eigen::VectorXi>(
@@ -285,9 +285,7 @@ bool ClosingFlow::step()
                   << (fid_active.size() + fid_inactive_vec.size() == (size_t)Ffull_.rows() ? "YES" : "NO") << "\n";
     }
 
-    // -------------------------------------------------------------------------
-    // Remove unreferenced vertices from active submesh
-    // -------------------------------------------------------------------------
+    // -- Step 3 cont: remove unreferenced vertices from active submesh, compute fixed_test and subset M ---
     Eigen::MatrixXd v_active;
     Eigen::MatrixXi f_active_new;
     Eigen::VectorXi I, J;
@@ -298,13 +296,17 @@ bool ClosingFlow::step()
     std::vector<bool> isMovingLocal(v_active.rows(), false);
     for (int i = 0; i < moving_.size(); ++i) {
         int local_idx = I(moving_(i));
-        if (local_idx >= 0)
+        if (local_idx >= 0) {
             isMovingLocal[local_idx] = true;
+        }
     }
     std::vector<int> fixed_test_vec;
     fixed_test_vec.reserve(v_active.rows());
-    for (int i = 0; i < (int)v_active.rows(); ++i)
-        if (!isMovingLocal[i]) fixed_test_vec.push_back(i);
+    for (int i = 0; i < (int)v_active.rows(); ++i) {
+        if (!isMovingLocal[i]) {
+            fixed_test_vec.push_back(i);
+        }
+    }
     Eigen::VectorXi fixed_test = Eigen::Map<Eigen::VectorXi>(
         fixed_test_vec.data(), (int)fixed_test_vec.size());
 
@@ -355,8 +357,9 @@ bool ClosingFlow::step()
     // M restricted to active submesh via J (new->old map)
     // -------------------------------------------------------------------------
     Eigen::VectorXd M_active(v_active.rows());
-    for (int i = 0; i < (int)v_active.rows(); ++i)
+    for (int i = 0; i < (int)v_active.rows(); ++i) {
         M_active(i) = M_(J(i));
+    }
 
     if (params_.verbose) {
         std::cerr << "M_active size: " << M_active.size()
@@ -414,8 +417,12 @@ bool ClosingFlow::step()
     // fixed = unique(concat(fixed_test, boundary_verts))
     std::vector<int> fixed_vec;
     fixed_vec.reserve(fixed_test.size() + boundary_verts.size());
-    for (int i = 0; i < fixed_test.size(); ++i)     fixed_vec.push_back(fixed_test(i));
-    for (int i = 0; i < boundary_verts.size(); ++i) fixed_vec.push_back(boundary_verts(i));
+    for (int i = 0; i < fixed_test.size(); ++i) {
+        fixed_vec.push_back(fixed_test(i));
+    }
+    for (int i = 0; i < boundary_verts.size(); ++i) {
+        fixed_vec.push_back(boundary_verts(i));
+    }
     std::sort(fixed_vec.begin(), fixed_vec.end());
     fixed_vec.erase(std::unique(fixed_vec.begin(), fixed_vec.end()), fixed_vec.end());
     Eigen::VectorXi fixed = Eigen::Map<Eigen::VectorXi>(fixed_vec.data(), (int)fixed_vec.size());
@@ -445,14 +452,13 @@ bool ClosingFlow::step()
                   << (fixed_xyz.maxCoeff() < 3 * nV_active ? "YES" : "NO") << "\n";
     }
 
-    // -------------------------------------------------------------------------
-    // Principal curvature directions per face
-    // -------------------------------------------------------------------------
+    // -- Step 4: Principal curvature directions per face ----------------------
     Eigen::MatrixXd PD1, PD2;
     Eigen::VectorXd PC1, PC2;
     pfpc::per_face_prin_curvature(V, F, PD1, PD2, PC1, PC2);
-    if (params_.opening)
+    if (params_.opening) {
         PD1 = PD2;
+    }
 
     if (params_.verbose) {
         std::cerr << "PD1 rows: " << PD1.rows() << " cols: " << PD1.cols()
@@ -521,8 +527,9 @@ bool ClosingFlow::step()
     Eigen::SparseMatrix<double> dblA_sparse(nF, nF);
     std::vector<Eigen::Triplet<double>> area_trips;
     area_trips.reserve(nF);
-    for (int i = 0; i < nF; i++)
+    for (int i = 0; i < nF; i++) {
         area_trips.emplace_back(i, i, dblA_vec(i));
+    }
     dblA_sparse.setFromTriplets(area_trips.begin(), area_trips.end());
 
     if (params_.verbose) {
@@ -552,8 +559,9 @@ bool ClosingFlow::step()
     Eigen::SparseMatrix<double> M_diag(nV_active, nV_active);
     std::vector<Eigen::Triplet<double>> m_trips;
     m_trips.reserve(nV_active);
-    for (int i = 0; i < nV_active; i++)
+    for (int i = 0; i < nV_active; i++) {
         m_trips.emplace_back(i, i, M_active(i));
+    }
     M_diag.setFromTriplets(m_trips.begin(), m_trips.end());
 
     Eigen::SparseMatrix<double> M_block(3*nV_active, 3*nV_active);
@@ -592,7 +600,7 @@ bool ClosingFlow::step()
         std::cerr << "sanity S_block rows == 3*nV? " << (S_block.rows() == 3*nV_active ? "YES" : "NO") << "\n";
     }
 
-    // K = M - tau * G^T * D^T * A * D * G   <-- this is Q
+    // K = M - tau * G^T * D^T * A * D * G   <- this is Q
     Eigen::SparseMatrix<double> Q = M_block - 0.01 * params_.dt * S_block;
 
     if (params_.verbose) {
@@ -644,9 +652,10 @@ bool ClosingFlow::step()
                   << " (should == fixed_xyz.size() = " << fixed_xyz.size() << ")\n";
         std::cerr << "sanity fixed_vals size == fixed_xyz size? "
                   << (fixed_vals.size() == fixed_xyz.size() ? "YES" : "NO") << "\n";
-        if (fixed_vals.size() > 0)
+        if (fixed_vals.size() > 0) {
             std::cerr << "sanity fixed_vals[0] == v_xyz[fixed_xyz[0]]? "
                       << (std::abs(fixed_vals(0) - v_xyz(fixed_xyz(0))) < 1e-10 ? "YES" : "NO") << "\n";
+        }
     }
 
     // -------------------------------------------------------------------------
@@ -695,9 +704,7 @@ bool ClosingFlow::step()
                   << " (should be close to 1.0, large values suggest solver diverged)\n";
     }
 
-    // -------------------------------------------------------------------------
-    // Remesh
-    // -------------------------------------------------------------------------
+    // -- Step 5: Remesh active submesh ----------------------------------------
     int nV_remesh = (int)U.rows();
     // Use percentage of average edge length as the target edge length
     double target_edge_length;
@@ -722,12 +729,16 @@ bool ClosingFlow::step()
     // Compute interior_verts BEFORE merge
     Eigen::VectorXi boundary_verts_remeshed = cf::get_all_boundary_vids(F);
     std::vector<bool> isBoundary(U.rows(), false);
-    for (int i = 0; i < boundary_verts_remeshed.size(); i++)
+    for (int i = 0; i < boundary_verts_remeshed.size(); i++) {
         isBoundary[boundary_verts_remeshed(i)] = true;
+    }
     std::vector<int> interior_verts_vec;
     interior_verts_vec.reserve(U.rows());
-    for (int i = 0; i < (int)U.rows(); i++)
-        if (!isBoundary[i]) interior_verts_vec.push_back(i);
+    for (int i = 0; i < (int)U.rows(); i++) {
+        if (!isBoundary[i]) {
+            interior_verts_vec.push_back(i);
+        }
+    }
     Eigen::VectorXi interior_verts = Eigen::Map<Eigen::VectorXi>(
         interior_verts_vec.data(), (int)interior_verts_vec.size());
 
@@ -739,9 +750,7 @@ bool ClosingFlow::step()
     // Udup = U
     Eigen::MatrixXd Udup = U;
 
-    // -------------------------------------------------------------------------
-    // Merge active and inactive surface
-    // -------------------------------------------------------------------------
+    // -- Step 9a: Merge active and inactive submeshes -------------------------
     int n_inactive_verts = (int)v_inactive.rows();
     int n_inactive_faces = (int)f_inactive.rows();
     int n_active_verts   = (int)Udup.rows();
@@ -774,10 +783,11 @@ bool ClosingFlow::step()
                   << (SVJ.size() == Vfull_new.rows() ? "YES" : "NO") << "\n";
     }
 
-    // ── Step 4: Map interior verts into full mesh ─────────────────────────────
+    // -- Step 9b: Map interior verts into full mesh via SVJ ---------------------
     Eigen::VectorXi interior_active_full(interior_verts.size());
-    for (int i = 0; i < interior_verts.size(); i++)
+    for (int i = 0; i < interior_verts.size(); i++) {
         interior_active_full(i) = SVJ(interior_verts(i) + n_inactive_verts);
+    }
 
     if (params_.verbose) {
         std::cerr << "interior_active_full size: " << interior_active_full.size() << "\n";
@@ -786,7 +796,7 @@ bool ClosingFlow::step()
                       interior_active_full.maxCoeff() < Vfull_.rows() ? "YES" : "NO - WARNING") << "\n";
     }
 
-    // ── Step 5: Rebuild A from active region edges ────────────────────────────
+    // -- Step 9c: Rebuild adjacency A from active region edges ------------------
     int nVfull_post = (int)Vfull_.rows();
     Eigen::MatrixXi F_global = F.array() + n_inactive_verts;
     Eigen::MatrixXi edges_active;
@@ -801,8 +811,9 @@ bool ClosingFlow::step()
         a_trips.emplace_back(u, v, 1);
         a_trips.emplace_back(v, u, 1);
     }
-    for (int i = 0; i < nVfull_post; i++)
+    for (int i = 0; i < nVfull_post; i++) {
         a_trips.emplace_back(i, i, 1);
+    }
     A_.setFromTriplets(a_trips.begin(), a_trips.end());
 
     if (params_.verbose) {
@@ -812,16 +823,17 @@ bool ClosingFlow::step()
                   << (A_.rows() == Vfull_.rows() ? "YES" : "NO - WARNING") << "\n";
     }
 
-    // ── Step 6 ────────────────────────────────────────────────────────────────
+    // -- Step 6: Recompute curvature on remeshed active submesh -------------------
     Eigen::VectorXd H_interior_active = cf::discrete_mean_curvature(U, F);
     Eigen::VectorXd K_interior_active = cf::discrete_gaussian_curvature(U, F);
 
-    // ── Step 7 ────────────────────────────────────────────────────────────────
+    // -- Step 7: Update mass matrix M_ over full mesh (Mnew) ----------------------
     Eigen::SparseMatrix<double> M_active_sparse;
     igl::massmatrix(U, F, igl::MASSMATRIX_TYPE_VORONOI, M_active_sparse);
     Eigen::VectorXd m_active(U.rows());
-    for (int i = 0; i < (int)U.rows(); i++)
+    for (int i = 0; i < (int)U.rows(); i++) {
         m_active(i) = M_active_sparse.coeff(i, i);
+    }
 
     M_.resize(Vfull_.rows());
     M_.setOnes();
@@ -830,18 +842,20 @@ bool ClosingFlow::step()
         int local_idx = interior_verts(i);
         M_(full_idx) = M_(full_idx) + m_active(local_idx) - 1.0;
     }
-    for (int i = 0; i < M_.size(); i++)
+    for (int i = 0; i < M_.size(); i++) {
         M_(i) = std::max(M_(i), 1e-8);
+    }
 
     if (params_.verbose) {
         std::cerr << "M updated, size: " << M_.size()
                   << " (should == Vfull.rows() == " << Vfull_.rows() << ")\n";
     }
 
-    // ── Step 8 ────────────────────────────────────────────────────────────────
+    // -- Step 8: Recompute principal curvatures on active submesh --------------------
     Eigen::VectorXd m_active_clipped(U.rows());
-    for (int i = 0; i < (int)U.rows(); i++)
+    for (int i = 0; i < (int)U.rows(); i++) {
         m_active_clipped(i) = std::max(m_active(i), 1e-8);
+    }
 
     Eigen::VectorXd disc_active = H_interior_active.array().square()
                                 - m_active_clipped.array() * K_interior_active.array();
@@ -858,12 +872,12 @@ bool ClosingFlow::step()
             m_active_clipped.cast<std::complex<double>>().array()).real().matrix();
     }
 
-    // ── Step 9 ────────────────────────────────────────────────────────────────
+    // -- Step 9 -----------------------------------------------------------------
     // Rebuild moving_ from post-remesh interior vertices that (a) have high
     // curvature AND (b) lie within the user's selected region (if any).
     //
     // (b) is checked geometrically because remeshing has invalidated the
-    // original vertex indexing. We compare each candidate's *position* to the
+    // original vertex indexing. We compare each candidate's position to the
     // snapshot of selected positions taken at construction time.
     const bool use_selection = selection_positions_.rows() > 0;
 
@@ -878,11 +892,8 @@ bool ClosingFlow::step()
         // For each interior_active_full vertex, find squared distance to the
         // nearest stored selection position. We use point_mesh_squared_distance
         // with a degenerate "mesh" of just the selection points (no faces)
-        // — but that API needs faces, so we use a direct loop instead.
+        // but that API needs faces so we use a direct loop instead.
         // For typical selection sizes (hundreds to low thousands) this is fast.
-        //
-        // If your selections get huge (10k+) and this becomes a hotspot,
-        // build a KD-tree once with nanoflann or igl::octree.
         for (int i = 0; i < interior_active_full.size(); ++i) {
             int full_idx = interior_active_full(i);
             Eigen::RowVector3d p = Vfull_.row(full_idx);
@@ -892,11 +903,14 @@ bool ClosingFlow::step()
                 double d2 = (p - selection_positions_.row(j)).squaredNorm();
                 if (d2 < min_d2) {
                     min_d2 = d2;
-                    if (min_d2 < selection_tol_sq_) break;  // early out
+                    if (min_d2 < selection_tol_sq_) {
+                      break;  // early out
+                    }
                 }
             }
-            if (min_d2 < selection_tol_sq_)
+            if (min_d2 < selection_tol_sq_) {
                 in_selection[full_idx] = true;
+            }
         }
     }
 
@@ -906,16 +920,19 @@ bool ClosingFlow::step()
         int full_idx  = interior_active_full(i);
         bool is_curvy   = K_interior_active_curv(local_idx) < -params_.bd;
         bool is_allowed = !use_selection || in_selection[full_idx];
-        if (is_curvy && is_allowed)
+        if (is_curvy && is_allowed) {
             moving_full[full_idx] = true;
+        }
     }
     std::vector<int> moving_vec;
     moving_vec.reserve(Vfull_.rows());
-    for (int i = 0; i < (int)Vfull_.rows(); i++)
+    for (int i = 0; i < (int)Vfull_.rows(); i++) {
         if (moving_full[i]) moving_vec.push_back(i);
+    }
     moving_.resize(moving_vec.size());
-    for (int i = 0; i < (int)moving_vec.size(); i++)
+    for (int i = 0; i < (int)moving_vec.size(); i++) {
         moving_(i) = moving_vec[i];
+    }
 
     if (params_.verbose) {
         std::cerr << "moving size after update: " << moving_.size() << "\n";
@@ -925,7 +942,7 @@ bool ClosingFlow::step()
         }
     }
 
-    // ── Step 10: convergence check ────────────────────────────────────────────
+    // -- Step 10: convergence check ------------------------------------------------
     if ((iter_ + 1) % 10 == 0) {
         Eigen::VectorXd sqr_dist;
         Eigen::VectorXi closest_faces;
